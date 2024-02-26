@@ -1,0 +1,190 @@
+name: Build anything
+
+on:
+  workflow_call:
+    inputs:
+      build_runner:
+        description: 'Github runners tag'
+        type: string
+        required: false
+        default: ubuntu-latest
+      image:
+        description: 'Docker image name'
+        type: string
+        required: true
+      path:
+        description: 'Path to Dockerfile'
+        type: string
+        required: true
+      build_timeout:
+        description: 'Build timeout minutes'
+        type: number
+        required: false
+        default: 3600
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_PASSWORD:
+        required: true
+      SLACK_WEBHOOK_URL:
+        required: true
+
+jobs:
+  build:
+    runs-on: ${{ inputs.build_runner }}
+    outputs:
+      image_version: ${{ steps.meta.outputs.version }}
+      image_id: ${{ steps.build_push.outputs.imageid }}
+      commit_message: ${{ steps.commit_info.outputs.message }}
+      commit_hash: ${{ steps.commit_info.outputs.hash }}
+      author_name: ${{ steps.commit_info.outputs.author_name }}
+      author_email: ${{ steps.commit_info.outputs.author_email }}
+    timeout-minutes: ${{ inputs.build_timeout }}
+    steps:
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.image }}
+          flavor: |
+            latest=true
+          tags: |
+            type=raw,value={{date 'YYYYMMDD.HHmmss' tz='Asia/Seoul'}}-{{sha}},enable={{is_default_branch}}
+            type=match,event=tag,pattern=v\d+.\d+.\d+
+            type=match,event=tag,pattern=\d+-\d+-\d+
+            type=match,event=tag,pattern=.*-(v\d+.\d+.\d+),group=1
+
+      - name: Set up QEMU
+        id: qemu
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        id: login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Get head commit information
+        id: commit_info
+        run: |
+          echo "message=$(git log -n 1 --format=%B HEAD | head -n 1)" >> $GITHUB_OUTPUT
+          echo "hash=$(git log -n 1 --format=%H | head -n 1)" >> $GITHUB_OUTPUT
+          echo "author_name=$(git log -n 1 --format=%an | head -n 1)" >> $GITHUB_OUTPUT
+          echo "author_email=$(git log -n 1 --format=%ae | head -n 1)" >> $GITHUB_OUTPUT
+      - name: Build and push
+        id: build_push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.path }}
+          platforms: linux/amd64,linux/arm64
+          file: ${{ inputs.path }}/dockerfile
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+  slack:
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    needs: [build]
+    env:
+      TITLE_MESSAGE: ':white_circle: *Build Unknown*'
+    steps:
+      - name: Check if build was successful
+        id: check
+        run: |
+          if [ ${{ needs.build.result }} == 'success' ]; then
+            echo "Build succeed"
+            echo "TITLE_MESSAGE=:white_check_mark: *Build Success*" >> $GITHUB_ENV
+          elif [ ${{ needs.build.result }} == 'failure' ]; then
+            echo "Build failure"
+            echo ":TITLE_MESSAGE=:red_circle: *Build Failure*" >> $GITHUB_ENV
+          else
+            echo "Build unknown"
+            echo ":TITLE_MESSAGE=:white_circle: *Build Unknown*" >> $GITHUB_ENV
+          fi
+      - name: Send custom JSON data to Slack workflow
+        id: success
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ env.TITLE_MESSAGE }}"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Image*\nhttps://hub.docker.com/r/${{inputs.image}}/tags"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Commit*\n_Author_: ${{ needs.build.outputs.author_name }} (${{ needs.build.outputs.author_email }})\n_Message_: ${{ needs.build.outputs.commit_message }}\n_URL_: ${{ github.server_url }}/${{github.repository}}/commit/${{ needs.build.outputs.commit_hash }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Action*\n${{ github.server_url }}/${{github.repository}}/actions/runs/${{github.run_id}}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Event*\n*${{github.event_name}}* from *${{github.ref_name}}* branch/tag"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+  pytest:
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: needs.build.result == 'success' && inputs.pytest == true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: install library
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r ${{ inputs.path }}/requirements.txt
+
+      - name: Docker run
+        run: |
+          cd ${{ inputs.path }}
+          docker-compose up -d
+          echo "wait docker container setup"
+          sleep 30s
+      - name: pytest
+        id: pytest
+        run: |
+          cd ${{ inputs.path }}/server/tests/
+          pytest test_*.py -vvv -c test.ini

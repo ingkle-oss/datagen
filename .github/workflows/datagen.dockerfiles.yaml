@@ -1,0 +1,17 @@
+name: Build deltasync
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - \d{4}-\d{2}-\d{2}
+jobs:
+  build:
+    uses: ./.github/workflows/dockerfiles.yaml
+    with:
+      image: ingkle/datagen
+      path: ./
+      build_runner: self-hosted
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
