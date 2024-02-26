@@ -1,4 +1,4 @@
-name: Build deltasync
+name: Build datagen
 on:
   workflow_dispatch:
   push:
