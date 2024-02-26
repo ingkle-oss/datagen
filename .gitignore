@@ -1,0 +1,15 @@
+.DS_Store
+.terraform
+.gitsecret/keys/random_seed
+!*.secret
+.checkpoints
+.ipynb_checkpoints
+node_modules/
+.terraform.lock.hcl
+**/charts/
+__pycache__
+.RData
+.Rhistory
+.virtual_documents
+.data
+target

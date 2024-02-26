@@ -1,0 +1,9 @@
+-i https://pypi.org/simple
+bson==0.5.10
+confluent-kafka==2.3.0
+faker==23.2.1; python_version >= '3.8'
+pendulum==3.0.0; python_version >= '3.8'
+python-dateutil==2.8.2; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'
+six==1.16.0; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2'
+time-machine==2.13.0; implementation_name != 'pypy'
+tzdata==2024.1; python_version >= '2'
