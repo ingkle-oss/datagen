@@ -75,13 +75,22 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--field-int-count", help="Number of int field", type=int, default=4
+        "--field-int-count", help="Number of int field", type=int, default=5
     )
     parser.add_argument(
         "--field-float-count", help="Number of float field", type=int, default=4
     )
     parser.add_argument(
         "--field-str-count", help="Number of string field", type=int, default=1
+    )
+    parser.add_argument(
+        "--field-str-cardinality",
+        help="Number of string field cardinality",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--field-str-length", help="Length of string field", type=int, default=10
     )
     parser.add_argument(
         "--field-word-count", help="Number of word field", type=int, default=0
@@ -184,10 +193,10 @@ if __name__ == "__main__":
     fields = (
         [f"int_{i}" for i in range(args.field_int_count)]
         + [f"float_{i}" for i in range(args.field_float_count)]
-        + [f"str_{i}" for i in range(args.field_str_count)]
         + [f"word_{i}" for i in range(args.field_word_count)]
         + [f"text_{i}" for i in range(args.field_text_count)]
         + [f"name_{i}" for i in range(args.field_name_count)]
+        + [f"str_{i}" for i in range(args.field_str_count)]
     )
     print("Produced fields: ")
     print(len(fields), fields)
@@ -223,6 +232,12 @@ if __name__ == "__main__":
             )
             PREV_OFFSET[f"{partition}"] = offset
 
+    if args.field_str_cardinality:
+        str_choice = [
+            fake.unique.pystr(max_chars=args.field_str_length)
+            for _ in range(args.field_str_cardinality)
+        ]
+
     while True:
         now = pendulum.now()
         for idx in range(args.rate):
@@ -239,17 +254,22 @@ if __name__ == "__main__":
                     random.uniform(-(2**31), (2**31) - 1)
                     for _ in range(args.field_float_count)
                 ]
-                + [
-                    "".join(
-                        random.choice(string.ascii_letters + string.digits)
-                        for _ in range(10)
-                    )
-                    for _ in range(args.field_str_count)
-                ]
                 + fake.words(args.field_word_count)
                 + fake.texts(args.field_text_count)
                 + [fake.name() for _ in range(args.field_name_count)]
             )
+            if args.field_str_cardinality:
+                value += [
+                    random.choice(str_choice) for _ in range(args.field_str_length)
+                ]
+            else:
+                value += [
+                    "".join(
+                        random.choice(string.ascii_letters + string.digits)
+                        for _ in range(args.field_str_length)
+                    )
+                    for _ in range(args.field_str_count)
+                ]
 
             value = {
                 "timestamp": epoch,
