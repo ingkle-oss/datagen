@@ -4,16 +4,15 @@
 # https://github.com/confluentinc/confluent-kafka-python/tree/master/examples
 
 import argparse
+import json
 import logging
-import random
-import string
 import time
 
 import pendulum
 from confluent_kafka import KafkaException, Producer
-from faker import Faker
+from fastnumbers import check_float
 
-from utils import encode
+from utils import download_s3file, encode, load_values
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -75,33 +74,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--field-int-count", help="Number of int field", type=int, default=5
-    )
-    parser.add_argument(
-        "--field-float-count", help="Number of float field", type=int, default=4
-    )
-    parser.add_argument(
-        "--field-str-count", help="Number of string field", type=int, default=1
-    )
-    parser.add_argument(
-        "--field-str-cardinality",
-        help="Number of string field cardinality",
-        type=int,
-        default=None,
-    )
-    parser.add_argument(
-        "--field-str-length", help="Length of string field", type=int, default=10
-    )
-    parser.add_argument(
-        "--field-word-count", help="Number of word field", type=int, default=0
-    )
-    parser.add_argument(
-        "--field-text-count", help="Number of text field", type=int, default=0
-    )
-    parser.add_argument(
-        "--field-name-count", help="Number of name field", type=int, default=0
-    )
-    parser.add_argument(
         "--field-date",
         help="Add date field (e.g. 2024-02-26)",
         action=argparse.BooleanOptionalAction,
@@ -114,6 +86,27 @@ if __name__ == "__main__":
         default=True,
     )
 
+    parser.add_argument(
+        "--s3endpoint",
+        help="S3 url",
+        default="http://seaweedfs-filer.seaweedfs.svc.cluster.local:8333",
+    )
+    parser.add_argument("--s3accesskey", help="S3 accesskey")
+    parser.add_argument("--s3secretkey", help="S3 secretkey")
+
+    parser.add_argument("--filepath", help="file to be produced", required=True)
+    parser.add_argument(
+        "--bigfile",
+        help="Whether file is big or not (default: False)",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument(
+        "--input-type",
+        help="Input file type",
+        choices=["csv", "json", "bson"],
+        default="json",
+    )
     parser.add_argument(
         "--output-type",
         help="Output message type",
@@ -134,7 +127,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--report-interval", help="Delivery report interval", type=int, default=1
     )
-
     parser.add_argument(
         "--flush",
         help="Flush after each produce (default: True)",
@@ -155,7 +147,14 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         key_vals[key] = val
 
-    # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
+    filepath = args.filepath
+    if filepath.startswith("s3a://"):
+        filepath = download_s3file(
+            filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
+        )
+
+    # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
+    # https://github.com/confluentinc/librdkafka/blob/master/INTRODUCTION.md#performance
     configs = {
         "bootstrap.servers": args.bootstrap_servers,
         "security.protocol": args.security_protocol,
@@ -191,18 +190,6 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
-    fake = Faker(use_weighting=False)
-    fields = (
-        [f"int_{i}" for i in range(args.field_int_count)]
-        + [f"float_{i}" for i in range(args.field_float_count)]
-        + [f"word_{i}" for i in range(args.field_word_count)]
-        + [f"text_{i}" for i in range(args.field_text_count)]
-        + [f"name_{i}" for i in range(args.field_name_count)]
-        + [f"str_{i}" for i in range(args.field_str_count)]
-    )
-    print("Produced fields: ")
-    print(len(fields), fields)
-
     REPORT_COUNT = 0
     PREV_OFFSET = {}
 
@@ -234,73 +221,116 @@ if __name__ == "__main__":
             )
             PREV_OFFSET[f"{partition}"] = offset
 
-    if args.field_str_cardinality:
-        str_choice = [
-            fake.unique.pystr(max_chars=args.field_str_length)
-            for _ in range(args.field_str_cardinality)
-        ]
+    # Load small file at once
+    if not args.bigfile:
+        values = load_values(filepath, args.input_type)
 
-    while True:
-        now = pendulum.now()
-        for idx in range(args.rate):
-            epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
-
-            value = (
-                [
-                    random.randint(-(2**31), (2**31) - 1)
-                    for _ in range(args.field_int_count)
-                ]
-                + [
-                    random.uniform(-(2**31), (2**31) - 1)
-                    for _ in range(args.field_float_count)
-                ]
-                + fake.words(args.field_word_count)
-                + fake.texts(args.field_text_count)
-                + [fake.name() for _ in range(args.field_name_count)]
-            )
-            if args.field_str_cardinality:
-                value += [
-                    random.choice(str_choice) for _ in range(args.field_str_length)
-                ]
-            else:
-                value += [
-                    "".join(
-                        random.choice(string.ascii_letters + string.digits)
-                        for _ in range(args.field_str_length)
-                    )
-                    for _ in range(args.field_str_count)
-                ]
-
-            value = {
-                "timestamp": epoch.timestamp(),
-                **key_vals,
-                **dict(zip(fields, value)),
-            }
-            if args.field_date:
-                value["date"] = epoch.format("YYYY-MM-DD")
-            if args.field_hour:
-                value["hour"] = epoch.format("HH")
-
-            producer.poll(0)
-            try:
-                producer.produce(
-                    args.topic,
-                    encode(value, args.output_type),
-                    args.key.encode("utf-8") if args.key else None,
-                    on_delivery=delivery_report,
+        val_idx = 0
+        while True:
+            now = pendulum.now("UTC")
+            for idx in range(args.rate):
+                epoch = now + pendulum.duration(
+                    microseconds=idx * (1000000 / args.rate)
                 )
-            except KafkaException as e:
-                logging.error("KafkaException: %s", e)
 
-            logging.debug("Produced: %s:%s", args.key, value)
+                value = values[val_idx]
+                val_idx = (val_idx + 1) % len(values)
 
-        if args.flush:
+                value = {
+                    "timestamp": epoch.timestamp(),
+                    **key_vals,
+                    **value,
+                }
+                if args.field_date:
+                    value["date"] = epoch.format("YYYY-MM-DD")
+                if args.field_hour:
+                    value["hour"] = epoch.format("HH")
+
+                producer.poll(0)
+                try:
+                    producer.produce(
+                        args.topic,
+                        encode(value, args.output_type),
+                        args.key.encode("utf-8") if args.key else None,
+                        on_delivery=delivery_report,
+                    )
+                except KafkaException as e:
+                    logging.error("KafkaException: %s", e)
+
+                logging.debug("Produced: %s:%s", args.key, value)
+
+            if args.flush:
+                producer.flush()
+
+            wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+            wait = 0.0 if wait < 0 else wait
+            logging.info("Waiting for %f seconds...", wait)
+            time.sleep(wait)
+
+        producer.flush()
+        logging.info("Finished")
+
+    # Load big file one by one
+    else:
+        if args.input_type == "bson":
+            raise RuntimeError("'bson' is not supported for bigfile(one-by-one)")
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            if args.input_type == "csv":
+                header = f.readline()
+                header = header.strip().split(",")
+
+            body_start = f.tell()
+
+            while True:
+                now = pendulum.now("UTC")
+                for idx in range(args.rate):
+                    epoch = now + pendulum.duration(
+                        microseconds=idx * (1000000 / args.rate)
+                    )
+
+                    value = f.readline()
+                    if not value:
+                        f.seek(body_start)
+                        value = f.readline()
+
+                    if args.input_type == "csv":
+                        value = value.strip().split(",")
+                        value = [float(v) if check_float(v) else v for v in value]
+                        value = dict(zip(header, value))
+                    else:
+                        value = json.loads(value)
+
+                    value = {
+                        "timestamp": epoch.timestamp(),
+                        **key_vals,
+                        **value,
+                    }
+                    if args.field_date:
+                        value["date"] = epoch.format("YYYY-MM-DD")
+                    if args.field_hour:
+                        value["hour"] = epoch.format("HH")
+
+                    producer.poll(0)
+                    try:
+                        producer.produce(
+                            args.topic,
+                            encode(value, args.output_type),
+                            args.key.encode("utf-8") if args.key else None,
+                            on_delivery=delivery_report,
+                        )
+                    except KafkaException as e:
+                        logging.error("KafkaException: %s", e)
+
+                    logging.debug("Produced: %s:%s", args.key, value)
+
+                if args.flush:
+                    producer.flush()
+
+                wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+                wait = 0.0 if wait < 0 else wait
+                logging.info("Waiting for %f seconds...", wait)
+                time.sleep(wait)
+
             producer.flush()
-
-        wait = 1.0 - (pendulum.now() - now).total_seconds()
-        wait = 0.0 if wait < 0 else wait
-        logging.info("Waiting for %f seconds...", wait)
-        time.sleep(wait)
-
-    producer.flush()
-    logging.info("Finished")
+            logging.info("Finished")

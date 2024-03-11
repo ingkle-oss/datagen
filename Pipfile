@@ -8,6 +8,8 @@ confluent-kafka = "*"
 pendulum = "*"
 faker = "*"
 bson = "*"
+fastnumbers = "*"
+boto3 = "*"
 
 [dev-packages]
 black = "*"

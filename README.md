@@ -17,13 +17,17 @@ pip3 install -r requirements.txt
 Run Kafka producer
 
 ```bash
-python3 src/produce_fake.py --bootstrap-servers BOOTSTRAP_SERVER --security-protocol SASL_PLAINTEXT --sasl-username ingkle --sasl-password ingkle1234 --topic test-topic --rate 1 --report-interval 1
+# Produce fake data
+python3 src/produce_fake.py --bootstrap-servers BOOTSTRAP_SERVER --security-protocol SASL_PLAINTEXT --sasl-username USERNAME --sasl-password PASSWORD --topic test-topic --rate 1 --report-interval 1
+
+# Produce from a file
+python3 src/produce_file.py --bootstrap-servers BOOTSTRAP_SERVER --security-protocol SASL_PLAINTEXT --sasl-username USERNAME --sasl-password PASSWORD --topic test-topic --filepath ./samples/loop.jsonl
 ```
 
 ## Run on docker
 
 ```bash
-
+# Produce fake data
 docker run --rm -it ingkle/datagen python3 produce_fake.py --bootstrap-servers BOOTSTRAP_SERVER --security-protocol SASL_PLAINTEXT --sasl-username USERNAME --sasl-password PASSWORD --topic test-topic --rate 1 --report-interval 1
 ```
 
