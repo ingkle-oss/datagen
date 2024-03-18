@@ -1,6 +1,6 @@
 # Description
 
-Big Data Generator fot testing
+Big Data Generator for testing
 
 ## Run on local
 
