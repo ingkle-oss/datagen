@@ -10,6 +10,7 @@ faker = "*"
 bson = "*"
 fastnumbers = "*"
 boto3 = "*"
+psycopg = "*"
 
 [dev-packages]
 black = "*"
