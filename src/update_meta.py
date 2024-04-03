@@ -91,8 +91,8 @@ if __name__ == "__main__":
                     (args.meta_table, "timestamp", "timestamp", False),
                     (args.meta_table, "date", "date", False),
                     (args.meta_table, "hour", "string", False),
-                    (args.meta_table, "__meta__offset", "string", True),
-                    (args.meta_table, "__meta__partition", "string", True),
+                    (args.meta_table, "__meta__offset", "integer", True),
+                    (args.meta_table, "__meta__partition", "integer", True),
                     (args.meta_table, "__meta__topic", "string", True),
                     (args.meta_table, "__meta__txn_target", "string", True),
                 ],
@@ -129,7 +129,7 @@ if __name__ == "__main__":
                 VALUES (%s, %s, %s, %s);
                 """,
                 [
-                    (args.meta_table, name, "str", True)
+                    (args.meta_table, name, "string", True)
                     for name in [f"str_{i}" for i in range(args.field_str_count)]
                 ],
             )
@@ -141,7 +141,7 @@ if __name__ == "__main__":
                 VALUES (%s, %s, %s, %s);
                 """,
                 [
-                    (args.meta_table, name, "word", True)
+                    (args.meta_table, name, "string", True)
                     for name in [f"word_{i}" for i in range(args.field_word_count)]
                 ],
             )
@@ -153,7 +153,7 @@ if __name__ == "__main__":
                 VALUES (%s, %s, %s, %s);
                 """,
                 [
-                    (args.meta_table, name, "text", True)
+                    (args.meta_table, name, "string", True)
                     for name in [f"text_{i}" for i in range(args.field_text_count)]
                 ],
             )
@@ -165,7 +165,7 @@ if __name__ == "__main__":
                 VALUES (%s, %s, %S);
                 """,
                 [
-                    (args.meta_table, name, "name", True)
+                    (args.meta_table, name, "string", True)
                     for name in [f"name_{i}" for i in range(args.field_name_count)]
                 ],
             )
