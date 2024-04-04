@@ -11,6 +11,7 @@ bson = "*"
 fastnumbers = "*"
 boto3 = "*"
 psycopg = "*"
+requests = "*"
 
 [dev-packages]
 black = "*"

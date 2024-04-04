@@ -22,6 +22,12 @@ python3 src/produce_fake.py --bootstrap-servers BOOTSTRAP_SERVER --security-prot
 
 # Produce from a file
 python3 src/produce_file.py --bootstrap-servers BOOTSTRAP_SERVER --security-protocol SASL_PLAINTEXT --sasl-username USERNAME --sasl-password PASSWORD --topic test-topic --filepath ./samples/loop.jsonl
+
+# Post fake data
+python3 src/post_fake.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --username USERNAME --password PASSWORD --ssl --topic test-topic --rate 10
+
+# Post from a file
+python3 src/post_file.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --username USERNAME --password PASSWORD --ssl --topic test-topic --filepath ./samples/loop.jsonl --rate 10
 ```
 
 ## Run on docker
