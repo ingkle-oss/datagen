@@ -89,7 +89,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--s3endpoint",
         help="S3 url",
-        default="http://seaweedfs-filer.seaweedfs.svc.cluster.local:8333",
+        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
     )
     parser.add_argument("--s3accesskey", help="S3 accesskey")
     parser.add_argument("--s3secretkey", help="S3 secretkey")
@@ -289,7 +289,6 @@ if __name__ == "__main__":
         exit(0)
 
     values = load_values(filepath, args.input_type)
-
     val_idx = 0
     while True:
         now = pendulum.now("UTC")
