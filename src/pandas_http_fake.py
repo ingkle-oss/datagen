@@ -5,16 +5,14 @@
 import argparse
 import json
 import logging
-import random
-import string
 import time
 
 import pendulum
 import requests
-from faker import Faker
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from utils import encode
+from utils.nzfake import NZFaker
+from utils.utils import encode
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -41,8 +39,12 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument("--username", help="Kafka SASL plain username", required=True)
-    parser.add_argument("--password", help="Kafka SASL plain password", required=True)
+    parser.add_argument(
+        "--sasl-username", help="Kafka SASL plain username", required=True
+    )
+    parser.add_argument(
+        "--sasl-password", help="Kafka SASL plain password", required=True
+    )
 
     parser.add_argument("--topic", help="Kafka topic name", required=True)
     parser.add_argument("--key", help="Kafka partition key", default=None)
@@ -105,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rate", help="records / seconds (1~1000000)", type=int, default=1
     )
+
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
 
@@ -121,81 +124,51 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         key_vals[key] = val
 
-    fake = Faker(use_weighting=False)
-    fields = (
-        [f"int_{i}" for i in range(args.field_int_count)]
-        + [f"float_{i}" for i in range(args.field_float_count)]
-        + [f"word_{i}" for i in range(args.field_word_count)]
-        + [f"text_{i}" for i in range(args.field_text_count)]
-        + [f"name_{i}" for i in range(args.field_name_count)]
-        + [f"str_{i}" for i in range(args.field_str_count)]
+    fake = NZFaker(
+        int_count=args.field_int_count,
+        float_count=args.field_float_count,
+        word_count=args.field_word_count,
+        text_count=args.field_text_count,
+        name_count=args.field_name_count,
+        str_count=args.field_str_count,
+        str_length=args.field_str_length,
+        str_cardinality=args.field_str_cardinality,
     )
-    print("Produced fields: ")
-    print(len(fields), fields)
 
-    if args.field_str_cardinality:
-        str_choice = [
-            fake.unique.pystr(max_chars=args.field_str_length)
-            for _ in range(args.field_str_cardinality)
-        ]
+    print("Produced fields: ")
+    print(len(fake.fields), fake.fields)
 
     while True:
-        now = pendulum.now()
-        records = []
+        now = pendulum.now("UTC")
+        rows = []
         for idx in range(args.rate):
             epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
 
-            value = (
-                [
-                    random.randint(-(2**31), (2**31) - 1)
-                    for _ in range(args.field_int_count)
-                ]
-                + [
-                    random.uniform(-(2**31), (2**31) - 1)
-                    for _ in range(args.field_float_count)
-                ]
-                + fake.words(args.field_word_count)
-                + fake.texts(args.field_text_count)
-                + [fake.name() for _ in range(args.field_name_count)]
-            )
-            if args.field_str_cardinality:
-                value += [
-                    random.choice(str_choice) for _ in range(args.field_str_length)
-                ]
-            else:
-                value += [
-                    "".join(
-                        random.choice(string.ascii_letters + string.digits)
-                        for _ in range(args.field_str_length)
-                    )
-                    for _ in range(args.field_str_count)
-                ]
-
-            value = {
+            row = {
                 "timestamp": epoch.timestamp(),
                 **key_vals,
-                **dict(zip(fields, value)),
+                **dict(zip(fake.fields, fake.values())),
             }
             if args.field_date:
-                value["date"] = epoch.format("YYYY-MM-DD")
+                row["date"] = epoch.format("YYYY-MM-DD")
             if args.field_hour:
-                value["hour"] = epoch.format("HH")
+                row["hour"] = epoch.format("HH")
 
             if args.key is None:
-                record = dict(
-                    value=encode(value, args.output_type), partition=args.partition
+                row = dict(
+                    value=encode(row, args.output_type), partition=args.partition
                 )
             else:
-                record = dict(
+                row = dict(
                     key=args.key.encode("utf-8"),
-                    value=encode(value, args.output_type),
+                    value=encode(row, args.output_type),
                     partition=args.partition,
                 )
-            records.append(record)
+            rows.append(row)
 
         res = requests.post(
-            url=f"{scheme}://{args.username}:{args.password}@{args.host}:{args.port}/topics/{args.topic}",
-            data=json.dumps(dict(records=records)),
+            url=f"{scheme}://{args.sasl_username}:{args.sasl_password}@{args.host}:{args.port}/topics/{args.topic}",
+            data=json.dumps(dict(records=rows)),
             headers={
                 "Content-Type": "application/vnd.kafka.json.v2+json",
                 "content-encoding": "gzip",
@@ -203,7 +176,7 @@ if __name__ == "__main__":
             verify=args.verify,
         ).json()
         logging.info(
-            f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
+            f"Total {len(rows)} messages delivered: {json.dumps(res, indent=2)}"
         )
 
         wait = 1.0 - (pendulum.now() - now).total_seconds()

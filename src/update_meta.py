@@ -84,7 +84,7 @@ if __name__ == "__main__":
             print(f"Inserting meta fields with table {args.meta_table}")
             cur.executemany(
                 f"""
-                INSERT INTO {args.postgresql_table} ("table", name, type, nullable)
+                INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
                 VALUES (%s, %s, %s, %s);
                 """,
                 [
@@ -101,7 +101,7 @@ if __name__ == "__main__":
             print(f"Inserting integer fields with table {args.meta_table}")
             cur.executemany(
                 f"""
-                INSERT INTO {args.postgresql_table} ("table", name, type, nullable)
+                INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
                 VALUES (%s, %s, %s, %s);
                 """,
                 [
@@ -113,7 +113,7 @@ if __name__ == "__main__":
             print(f"Inserting float fields with table {args.meta_table}")
             cur.executemany(
                 f"""
-                INSERT INTO {args.postgresql_table} ("table", name, type, nullable)
+                INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
                 VALUES (%s, %s, %s, %s);
                 """,
                 [
@@ -125,7 +125,7 @@ if __name__ == "__main__":
             print(f"Inserting string fields with table {args.meta_table}")
             cur.executemany(
                 f"""
-                INSERT INTO {args.postgresql_table} ("table", name, type, nullable)
+                INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
                 VALUES (%s, %s, %s, %s);
                 """,
                 [
@@ -137,7 +137,7 @@ if __name__ == "__main__":
             print(f"Inserting word fields with table {args.meta_table}")
             cur.executemany(
                 f"""
-                INSERT INTO {args.postgresql_table} ("table", name, type, nullable)
+                INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
                 VALUES (%s, %s, %s, %s);
                 """,
                 [
@@ -149,7 +149,7 @@ if __name__ == "__main__":
             print(f"Inserting text fields with table {args.meta_table}")
             cur.executemany(
                 f"""
-                INSERT INTO {args.postgresql_table} ("table", name, type, nullable)
+                INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
                 VALUES (%s, %s, %s, %s);
                 """,
                 [
@@ -161,7 +161,7 @@ if __name__ == "__main__":
             print(f"Inserting name fields with table {args.meta_table}")
             cur.executemany(
                 f"""
-                INSERT INTO {args.postgresql_table} ("table", name, type, nullable)
+                INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
                 VALUES (%s, %s, %S);
                 """,
                 [

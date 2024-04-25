@@ -12,7 +12,8 @@ import requests
 from fastnumbers import check_float
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from utils import download_s3file, encode, load_values
+from utils.nzfake import NZFaker
+from utils.utils import download_s3file, encode, load_values
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -39,8 +40,12 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument("--username", help="Kafka SASL plain username", required=True)
-    parser.add_argument("--password", help="Kafka SASL plain password", required=True)
+    parser.add_argument(
+        "--sasl-username", help="Kafka SASL plain username", required=True
+    )
+    parser.add_argument(
+        "--sasl-password", help="Kafka SASL plain password", required=True
+    )
 
     parser.add_argument("--topic", help="Kafka topic name", required=True)
     parser.add_argument("--key", help="Kafka partition key", default=None)
@@ -106,13 +111,13 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-    scheme = "https" if args.ssl else "http"
-
     key_vals = {}
     for kv in args.key_vals:
         key, val = kv.split("=")
         key_vals[key] = val
+
+    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+    scheme = "https" if args.ssl else "http"
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):
@@ -120,66 +125,8 @@ if __name__ == "__main__":
             filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
         )
 
-    # Load small file at once
-    if not args.bigfile:
-        values = load_values(filepath, args.input_type)
-
-        val_idx = 0
-        while True:
-            now = pendulum.now("UTC")
-            records = []
-            for idx in range(args.rate):
-                epoch = now + pendulum.duration(
-                    microseconds=idx * (1000000 / args.rate)
-                )
-
-                value = values[val_idx]
-                val_idx = (val_idx + 1) % len(values)
-
-                value = {
-                    "timestamp": epoch.timestamp(),
-                    **key_vals,
-                    **value,
-                }
-                if args.field_date:
-                    value["date"] = epoch.format("YYYY-MM-DD")
-                if args.field_hour:
-                    value["hour"] = epoch.format("HH")
-
-                if args.key is None:
-                    record = dict(
-                        value=encode(value, args.output_type), partition=args.partition
-                    )
-                else:
-                    record = dict(
-                        key=args.key.encode("utf-8"),
-                        value=encode(value, args.output_type),
-                        partition=args.partition,
-                    )
-                records.append(record)
-
-            res = requests.post(
-                url=f"{scheme}://{args.username}:{args.password}@{args.host}:{args.port}/topics/{args.topic}",
-                data=json.dumps(dict(records=records)),
-                headers={
-                    "Content-Type": "application/vnd.kafka.json.v2+json",
-                    "content-encoding": "gzip",
-                },
-                verify=args.verify,
-            ).json()
-            logging.info(
-                f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
-            )
-
-            wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
-            wait = 0.0 if wait < 0 else wait
-            logging.info("Waiting for %f seconds...", wait)
-            time.sleep(wait)
-
-        logging.info("Finished")
-
-    # Load big file one by one
-    else:
+    # For bigfile, load file one by one
+    if args.bigfile:
         if args.input_type == "bson":
             raise RuntimeError("'bson' is not supported for bigfile(one-by-one)")
 
@@ -192,58 +139,59 @@ if __name__ == "__main__":
 
             while True:
                 now = pendulum.now("UTC")
-                records = []
+                rows = []
                 for idx in range(args.rate):
                     epoch = now + pendulum.duration(
                         microseconds=idx * (1000000 / args.rate)
                     )
 
-                    value = f.readline()
-                    if not value:
+                    row = f.readline()
+                    if not row:
                         f.seek(body_start)
-                        value = f.readline()
+                        row = f.readline()
 
                     if args.input_type == "csv":
-                        value = value.strip().split(",")
-                        value = [float(v) if check_float(v) else v for v in value]
-                        value = dict(zip(header, value))
+                        row = row.strip().split(",")
+                        row = [float(v) if check_float(v) else v for v in row]
+                        row = dict(zip(header, row))
                     else:
-                        value = json.loads(value)
+                        row = json.loads(row)
 
-                    value = {
+                    row = {
                         "timestamp": epoch.timestamp(),
                         **key_vals,
-                        **value,
+                        **row,
                     }
                     if args.field_date:
-                        value["date"] = epoch.format("YYYY-MM-DD")
+                        row["date"] = epoch.format("YYYY-MM-DD")
                     if args.field_hour:
-                        value["hour"] = epoch.format("HH")
+                        row["hour"] = epoch.format("HH")
 
                     if args.key is None:
                         record = dict(
-                            value=encode(value, args.output_type),
+                            value=encode(row, args.output_type),
                             partition=args.partition,
                         )
                     else:
                         record = dict(
                             key=args.key.encode("utf-8"),
-                            value=encode(value, args.output_type),
+                            value=encode(row, args.output_type),
                             partition=args.partition,
                         )
-                    records.append(record)
+                    rows.append(record)
 
                 res = requests.post(
-                    url=f"{scheme}://{args.username}:{args.password}@{args.host}:{args.port}/topics/{args.topic}",
-                    data=json.dumps(dict(records=records)),
+                    url=f"{scheme}://{args.sasl_username}:{args.sasl_password}@{args.host}:{args.port}/topics/{args.topic}",
+                    data=json.dumps(dict(records=rows)),
                     headers={
                         "Content-Type": "application/vnd.kafka.json.v2+json",
                         "content-encoding": "gzip",
                     },
                     verify=args.verify,
                 ).json()
+
                 logging.info(
-                    f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
+                    f"Total {len(rows)} messages delivered: {json.dumps(res, indent=2)}"
                 )
 
                 wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
@@ -251,3 +199,56 @@ if __name__ == "__main__":
                 logging.info("Waiting for %f seconds...", wait)
                 time.sleep(wait)
             logging.info("Finished")
+
+    values = load_values(filepath, args.input_type)
+
+    val_idx = 0
+    while True:
+        now = pendulum.now("UTC")
+        rows = []
+        for idx in range(args.rate):
+            epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
+
+            row = {
+                "timestamp": epoch.timestamp(),
+                **key_vals,
+                **values[val_idx],
+            }
+            val_idx = (val_idx + 1) % len(values)
+
+            if args.field_date:
+                row["date"] = epoch.format("YYYY-MM-DD")
+            if args.field_hour:
+                row["hour"] = epoch.format("HH")
+
+            if args.key is None:
+                record = dict(
+                    value=encode(row, args.output_type), partition=args.partition
+                )
+            else:
+                record = dict(
+                    key=args.key.encode("utf-8"),
+                    value=encode(row, args.output_type),
+                    partition=args.partition,
+                )
+            rows.append(record)
+
+        res = requests.post(
+            url=f"{scheme}://{args.sasl_username}:{args.sasl_password}@{args.host}:{args.port}/topics/{args.topic}",
+            data=json.dumps(dict(records=rows)),
+            headers={
+                "Content-Type": "application/vnd.kafka.json.v2+json",
+                "content-encoding": "gzip",
+            },
+            verify=args.verify,
+        ).json()
+        logging.info(
+            f"Total {len(rows)} messages delivered: {json.dumps(res, indent=2)}"
+        )
+
+        wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+        wait = 0.0 if wait < 0 else wait
+        logging.info("Waiting for %f seconds...", wait)
+        time.sleep(wait)
+
+    logging.info("Finished")

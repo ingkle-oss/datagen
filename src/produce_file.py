@@ -12,7 +12,7 @@ import pendulum
 from confluent_kafka import KafkaException, Producer
 from fastnumbers import check_float
 
-from utils import download_s3file, encode, load_values
+from utils.utils import download_s3file, encode, load_values
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -127,6 +127,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--report-interval", help="Delivery report interval", type=int, default=1
     )
+
     parser.add_argument(
         "--flush",
         help="Flush after each produce (default: True)",
@@ -147,14 +148,8 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         key_vals[key] = val
 
-    filepath = args.filepath
-    if filepath.startswith("s3a://"):
-        filepath = download_s3file(
-            filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
-        )
-
+    # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
-    # https://github.com/confluentinc/librdkafka/blob/master/INTRODUCTION.md#performance
     configs = {
         "bootstrap.servers": args.bootstrap_servers,
         "security.protocol": args.security_protocol,
@@ -221,57 +216,14 @@ if __name__ == "__main__":
             )
             PREV_OFFSET[f"{partition}"] = offset
 
-    # Load small file at once
-    if not args.bigfile:
-        values = load_values(filepath, args.input_type)
+    filepath = args.filepath
+    if filepath.startswith("s3a://"):
+        filepath = download_s3file(
+            filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
+        )
 
-        val_idx = 0
-        while True:
-            now = pendulum.now("UTC")
-            for idx in range(args.rate):
-                epoch = now + pendulum.duration(
-                    microseconds=idx * (1000000 / args.rate)
-                )
-
-                value = values[val_idx]
-                val_idx = (val_idx + 1) % len(values)
-
-                value = {
-                    "timestamp": epoch.timestamp(),
-                    **key_vals,
-                    **value,
-                }
-                if args.field_date:
-                    value["date"] = epoch.format("YYYY-MM-DD")
-                if args.field_hour:
-                    value["hour"] = epoch.format("HH")
-
-                producer.poll(0)
-                try:
-                    producer.produce(
-                        args.topic,
-                        encode(value, args.output_type),
-                        args.key.encode("utf-8") if args.key else None,
-                        on_delivery=delivery_report,
-                    )
-                except KafkaException as e:
-                    logging.error("KafkaException: %s", e)
-
-                logging.debug("Produced: %s:%s", args.key, value)
-
-            if args.flush:
-                producer.flush()
-
-            wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
-            wait = 0.0 if wait < 0 else wait
-            logging.info("Waiting for %f seconds...", wait)
-            time.sleep(wait)
-
-        producer.flush()
-        logging.info("Finished")
-
-    # Load big file one by one
-    else:
+    # For bigfile, load file one by one
+    if args.bigfile:
         if args.input_type == "bson":
             raise RuntimeError("'bson' is not supported for bigfile(one-by-one)")
 
@@ -289,40 +241,40 @@ if __name__ == "__main__":
                         microseconds=idx * (1000000 / args.rate)
                     )
 
-                    value = f.readline()
-                    if not value:
+                    row = f.readline()
+                    if not row:
                         f.seek(body_start)
-                        value = f.readline()
+                        row = f.readline()
 
                     if args.input_type == "csv":
-                        value = value.strip().split(",")
-                        value = [float(v) if check_float(v) else v for v in value]
-                        value = dict(zip(header, value))
+                        row = row.strip().split(",")
+                        row = [float(v) if check_float(v) else v for v in row]
+                        row = dict(zip(header, row))
                     else:
-                        value = json.loads(value)
+                        row = json.loads(row)
 
-                    value = {
+                    row = {
                         "timestamp": epoch.timestamp(),
                         **key_vals,
-                        **value,
+                        **row,
                     }
                     if args.field_date:
-                        value["date"] = epoch.format("YYYY-MM-DD")
+                        row["date"] = epoch.format("YYYY-MM-DD")
                     if args.field_hour:
-                        value["hour"] = epoch.format("HH")
+                        row["hour"] = epoch.format("HH")
 
                     producer.poll(0)
                     try:
                         producer.produce(
                             args.topic,
-                            encode(value, args.output_type),
+                            encode(row, args.output_type),
                             args.key.encode("utf-8") if args.key else None,
                             on_delivery=delivery_report,
                         )
                     except KafkaException as e:
                         logging.error("KafkaException: %s", e)
 
-                    logging.debug("Produced: %s:%s", args.key, value)
+                    logging.debug("Produced: %s:%s", args.key, row)
 
                 if args.flush:
                     producer.flush()
@@ -334,3 +286,48 @@ if __name__ == "__main__":
 
             producer.flush()
             logging.info("Finished")
+        exit(0)
+
+    values = load_values(filepath, args.input_type)
+
+    val_idx = 0
+    while True:
+        now = pendulum.now("UTC")
+        for idx in range(args.rate):
+            epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
+
+            row = {
+                "timestamp": epoch.timestamp(),
+                **key_vals,
+                **values[val_idx],
+            }
+            val_idx = (val_idx + 1) % len(values)
+
+            if args.field_date:
+                row["date"] = epoch.format("YYYY-MM-DD")
+            if args.field_hour:
+                row["hour"] = epoch.format("HH")
+
+            producer.poll(0)
+            try:
+                producer.produce(
+                    args.topic,
+                    encode(row, args.output_type),
+                    args.key.encode("utf-8") if args.key else None,
+                    on_delivery=delivery_report,
+                )
+            except KafkaException as e:
+                logging.error("KafkaException: %s", e)
+
+            logging.debug("Produced: %s:%s", args.key, row)
+
+        if args.flush:
+            producer.flush()
+
+        wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+        wait = 0.0 if wait < 0 else wait
+        logging.info("Waiting for %f seconds...", wait)
+        time.sleep(wait)
+
+    producer.flush()
+    logging.info("Finished")

@@ -5,15 +5,13 @@
 
 import argparse
 import logging
-import random
-import string
 import time
 
 import pendulum
 from confluent_kafka import KafkaException, Producer
-from faker import Faker
 
-from utils import encode
+from utils.nzfake import NZFaker
+from utils.utils import encode
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -156,6 +154,7 @@ if __name__ == "__main__":
         key_vals[key] = val
 
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
+    # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
     configs = {
         "bootstrap.servers": args.bootstrap_servers,
         "security.protocol": args.security_protocol,
@@ -191,18 +190,6 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
-    fake = Faker(use_weighting=False)
-    fields = (
-        [f"int_{i}" for i in range(args.field_int_count)]
-        + [f"float_{i}" for i in range(args.field_float_count)]
-        + [f"word_{i}" for i in range(args.field_word_count)]
-        + [f"text_{i}" for i in range(args.field_text_count)]
-        + [f"name_{i}" for i in range(args.field_name_count)]
-        + [f"str_{i}" for i in range(args.field_str_count)]
-    )
-    print("Produced fields: ")
-    print(len(fields), fields)
-
     REPORT_COUNT = 0
     PREV_OFFSET = {}
 
@@ -234,70 +221,50 @@ if __name__ == "__main__":
             )
             PREV_OFFSET[f"{partition}"] = offset
 
-    if args.field_str_cardinality:
-        str_choice = [
-            fake.unique.pystr(max_chars=args.field_str_length)
-            for _ in range(args.field_str_cardinality)
-        ]
-
+    fake = NZFaker(
+        int_count=args.field_int_count,
+        float_count=args.field_float_count,
+        word_count=args.field_word_count,
+        text_count=args.field_text_count,
+        name_count=args.field_name_count,
+        str_count=args.field_str_count,
+        str_length=args.field_str_length,
+        str_cardinality=args.field_str_cardinality,
+    )
+    print("Produced fields: ")
+    print(len(fake.fields), fake.fields)
     while True:
-        now = pendulum.now()
+        now = pendulum.now("UTC")
         for idx in range(args.rate):
             epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
 
-            value = (
-                [
-                    random.randint(-(2**31), (2**31) - 1)
-                    for _ in range(args.field_int_count)
-                ]
-                + [
-                    random.uniform(-(2**31), (2**31) - 1)
-                    for _ in range(args.field_float_count)
-                ]
-                + fake.words(args.field_word_count)
-                + fake.texts(args.field_text_count)
-                + [fake.name() for _ in range(args.field_name_count)]
-            )
-            if args.field_str_cardinality:
-                value += [
-                    random.choice(str_choice) for _ in range(args.field_str_length)
-                ]
-            else:
-                value += [
-                    "".join(
-                        random.choice(string.ascii_letters + string.digits)
-                        for _ in range(args.field_str_length)
-                    )
-                    for _ in range(args.field_str_count)
-                ]
-
-            value = {
+            row = {
                 "timestamp": epoch.timestamp(),
                 **key_vals,
-                **dict(zip(fields, value)),
+                **dict(zip(fake.fields, fake.values())),
             }
             if args.field_date:
-                value["date"] = epoch.format("YYYY-MM-DD")
+                row["date"] = epoch.format("YYYY-MM-DD")
             if args.field_hour:
-                value["hour"] = epoch.format("HH")
+                row["hour"] = epoch.format("HH")
 
             producer.poll(0)
             try:
                 producer.produce(
                     args.topic,
-                    encode(value, args.output_type),
+                    encode(row, args.output_type),
                     args.key.encode("utf-8") if args.key else None,
                     on_delivery=delivery_report,
                 )
             except KafkaException as e:
                 logging.error("KafkaException: %s", e)
 
-            logging.debug("Produced: %s:%s", args.key, value)
+            logging.debug("Produced: %s:%s", args.key, row)
 
         if args.flush:
             producer.flush()
 
-        wait = 1.0 - (pendulum.now() - now).total_seconds()
+        wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
         wait = 0.0 if wait < 0 else wait
         logging.info("Waiting for %f seconds...", wait)
         time.sleep(wait)
