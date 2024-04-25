@@ -12,6 +12,8 @@ fastnumbers = "*"
 boto3 = "*"
 psycopg = "*"
 requests = "*"
+sqlalchemy = "*"
+psycopg2 = "*"
 
 [dev-packages]
 black = "*"

@@ -11,7 +11,7 @@ import pendulum
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from utils.nzfake import NZFaker
+from utils.nzfake import NZFaker, NZFakerStore
 from utils.utils import encode
 
 if __name__ == "__main__":
@@ -49,6 +49,14 @@ if __name__ == "__main__":
     parser.add_argument("--topic", help="Kafka topic name", required=True)
     parser.add_argument("--key", help="Kafka partition key", default=None)
     parser.add_argument("--partition", help="Kafka partition", type=int, default=0)
+
+    parser.add_argument("--postgresql-host", help="postgresql host")
+    parser.add_argument("--postgresql-port", help="Postgresql port", type=int)
+    parser.add_argument("--postgresql-username", help="Postgresql username")
+    parser.add_argument("--postgresql-password", help="Postgresql password")
+    parser.add_argument("--postgresql-database", help="Postgresql database name")
+    parser.add_argument("--postgresql-table")
+    parser.add_argument("--postgresql-table-name", help="table name for fake schema")
 
     parser.add_argument(
         "--field-int-count", help="Number of int field", type=int, default=5
@@ -124,17 +132,55 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         key_vals[key] = val
 
-    fake = NZFaker(
-        int_count=args.field_int_count,
-        float_count=args.field_float_count,
-        word_count=args.field_word_count,
-        text_count=args.field_text_count,
-        name_count=args.field_name_count,
-        str_count=args.field_str_count,
-        str_length=args.field_str_length,
-        str_cardinality=args.field_str_cardinality,
-    )
-
+    if all(
+        [
+            args.postgresql_host,
+            args.postgresql_port,
+            args.postgresql_username,
+            args.postgresql_password,
+            args.postgresql_database,
+            args.postgresql_table,
+            args.postgresql_table_name,
+        ]
+    ):
+        fake = NZFakerStore(
+            host=args.postgresql_host,
+            port=args.postgresql_port,
+            username=args.postgresql_username,
+            password=args.postgresql_password,
+            database=args.postgresql_database,
+            table=args.postgresql_table,
+            table_name=args.postgresql_table_name,
+            loglevel=args.loglevel,
+            str_length=args.field_str_length,
+            str_cardinality=args.field_str_cardinality,
+        )
+        print("FakerStore is created")
+    elif any(
+        [
+            args.postgresql_host,
+            args.postgresql_port,
+            args.postgresql_username,
+            args.postgresql_password,
+            args.postgresql_database,
+            args.postgresql_table,
+            args.postgresql_table_name,
+        ]
+    ):
+        print(args)
+        raise ValueError("postgresql options are not enough")
+    else:
+        fake = NZFaker(
+            int_count=args.field_int_count,
+            float_count=args.field_float_count,
+            word_count=args.field_word_count,
+            text_count=args.field_text_count,
+            name_count=args.field_name_count,
+            str_count=args.field_str_count,
+            str_length=args.field_str_length,
+            str_cardinality=args.field_str_cardinality,
+        )
+        print("Faker is created")
     print("Produced fields: ")
     print(len(fake.fields), fake.fields)
 
@@ -147,7 +193,7 @@ if __name__ == "__main__":
             row = {
                 "timestamp": epoch.timestamp(),
                 **key_vals,
-                **dict(zip(fake.fields, fake.values())),
+                **fake.values(),
             }
             if args.field_date:
                 row["date"] = epoch.format("YYYY-MM-DD")

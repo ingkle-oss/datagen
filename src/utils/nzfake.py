@@ -1,7 +1,11 @@
 import random
 import string
+from datetime import datetime
 
 from faker import Faker
+from sqlalchemy import Boolean, DateTime, Identity, String, create_engine, func, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 
 class NZFaker:
@@ -26,7 +30,7 @@ class NZFaker:
         text_count=0,
         name_count=0,
         str_count=0,
-        str_length=0,
+        str_length=10,
         str_cardinality=0,
     ):
         self.fake = Faker(use_weighting=False)
@@ -75,4 +79,139 @@ class NZFaker:
                 )
                 for _ in range(self.str_count)
             ]
+        return dict(zip(self.fields, values))
+
+
+class Base(DeclarativeBase):
+    def __repr__(self) -> str:
+        return str(self.__dict__)
+
+
+def field_model(tablename):
+
+    class Field(Base):
+
+        __tablename__ = tablename
+
+        type: Mapped[str] = mapped_column(String, nullable=True)
+        subtype: Mapped[str] = mapped_column(String, nullable=True)
+        name: Mapped[str] = mapped_column(String, primary_key=True)
+        table_name: Mapped[str] = mapped_column(String, primary_key=True)
+        nullable: Mapped[str] = mapped_column(Boolean, nullable=True)
+        comment: Mapped[str] = mapped_column(String, nullable=True)
+        data_source: Mapped[str] = mapped_column(String, nullable=True)
+        data_order: Mapped[str] = mapped_column(String, nullable=True)
+        created_at: Mapped[str] = mapped_column(
+            DateTime, server_default=func.now(), nullable=True
+        )
+        updated_at: Mapped[str] = mapped_column(
+            DateTime, server_default=func.now(), nullable=True
+        )
+
+        def __init__(
+            self,
+            type,
+            subtype,
+            name,
+            table,
+            nullable,
+            comment,
+            data_source,
+            data_order,
+            created_at,
+            updated_at,
+        ):
+            self.type = type
+            self.subtype = subtype
+            self.name = name
+            self.table_name = table
+            self.nullable = nullable
+            self.comment = comment
+            self.data_source = data_source
+            self.data_order = data_order
+            self.created_at = created_at
+            self.updated_at = updated_at
+
+    return Field
+
+
+class NZFakerStore:
+    fake = None
+    fields = []
+    str_choice: list[str]
+    str_length: int
+    str_cardinality: int
+
+    def __init__(
+        self,
+        host,
+        port,
+        username,
+        password,
+        database,
+        table,
+        table_name,
+        loglevel="INFO",
+        str_length=10,
+        str_cardinality=0,
+    ):
+        engine = create_engine(
+            f"postgresql://{username}:{password}@{host}:{port}/{database}",
+            echo=True if loglevel == "DEBUG" else False,
+        )
+
+        Field = field_model(table)
+        with Session(engine, expire_on_commit=False) as session:
+            self.fields = sorted(
+                [
+                    {"name": s.name, "type": s.type, "subtype": s.subtype}
+                    for s in session.scalars(
+                        select(Field).where(Field.table_name == table_name)
+                    ).all()
+                ],
+                key=lambda x: x["name"],
+            )
+
+        self.fake = Faker(use_weighting=False)
+
+        self.str_length = str_length if str_length and str_length > 0 else 0
+        self.str_cardinality = (
+            str_cardinality if str_cardinality and str_cardinality > 0 else 0
+        )
+
+        if self.str_cardinality > 0:
+            self.str_choice = [
+                self.fake.unique.pystr(max_chars=str_length)
+                for _ in range(str_cardinality)
+            ]
+
+    def values(self):
+        values = {}
+        for field in self.fields:
+            if field["name"].startswith("__"):
+                continue
+
+            if field["type"] == "integer":
+                values[field["name"]] = random.randint(-(2**31), (2**31) - 1)
+            elif field["type"] == "long":
+                values[field["name"]] = random.randint(-(2**63), (2**63) - 1)
+            elif field["type"] == "float":
+                values[field["name"]] = random.uniform(-(2**31), (2**31) - 1)
+            elif field["type"] == "double":
+                values[field["name"]] = random.uniform(-(2**63), (2**63) - 1)
+            elif field["type"] == "timestamp":
+                values[field["name"]] = datetime.now()
+            elif field["type"] == "date":
+                values[field["name"]] = datetime.now().date()
+            elif field["type"] == "string":
+                if self.str_cardinality > 0:
+                    values[field["name"]] = random.choice(self.str_choice)
+                else:
+                    values[field["name"]] = "".join(
+                        random.choice(string.ascii_letters + string.digits)
+                        for _ in range(self.str_length)
+                    )
+            else:
+                raise ValueError(f"Unknown field type: {field['type']}")
+
         return values
