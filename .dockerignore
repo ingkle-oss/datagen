@@ -1,7 +1,8 @@
-.vscode
-.idea
-.git
-.gitignore
-.dockerignore
-dockerfile
-__pycache__
+**/.vscode
+**/.idea
+**/.git
+**/.gitignore
+**/.dockerignore
+**/dockerfile
+**/__pycache__
+**/.pyc
