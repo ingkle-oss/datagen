@@ -50,9 +50,8 @@ jobs:
             latest=true
           tags: |
             type=raw,value={{date 'YYYYMMDD.HHmmss' tz='Asia/Seoul'}}-{{sha}},enable={{is_default_branch}}
-            type=match,event=tag,pattern=v\d+.\d+.\d+
-            type=match,event=tag,pattern=\d+-\d+-\d+
-            type=match,event=tag,pattern=.*-(v\d+.\d+.\d+),group=1
+            type=match,event=tag,pattern=v\d+.\d+.\d+.*
+            type=match,event=tag,pattern=20[0-9][0-9]-[0-1][0-9]-[0-3][0-9].*
 
       - name: Set up QEMU
         id: qemu
