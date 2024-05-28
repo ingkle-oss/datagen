@@ -3,7 +3,6 @@
     "**/.classpath": true,
     "**/.git": true,
     "**/.DS_Store": true,
-    "**/.pyc": true
   },
   "files.insertFinalNewline": true,
   "editor.formatOnSave": true,
@@ -32,6 +31,7 @@
   "[typescriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
+  "rust-analyzer.showUnlinkedFileNotification": false,
   "terraform.experimentalFeatures.prefillRequiredFields": true,
   "terraform.experimentalFeatures.validateOnSave": true,
   "[terraform]": {
@@ -47,5 +47,5 @@
   "files.associations": {
     "**/clusters/**/playbooks/**/*.yml": "ansible",
     "**/clusters/**/playbooks/**/*.yaml": "ansible"
-  }
+  },
 }
