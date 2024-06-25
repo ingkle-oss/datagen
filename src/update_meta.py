@@ -78,23 +78,23 @@ if __name__ == "__main__":
         with conn.cursor() as cur:
             print(f"Deleting all with table {args.meta_table}")
             cur.execute(
-                f"DELETE FROM {args.postgresql_table} WHERE \"table\" = '{args.meta_table}'"
+                f"DELETE FROM {args.postgresql_table} WHERE \"table_name\" = '{args.meta_table}'"
             )
 
             print(f"Inserting meta fields with table {args.meta_table}")
             cur.executemany(
                 f"""
-                INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
-                VALUES (%s, %s, %s, %s);
+                INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable, subtype)
+                VALUES (%s, %s, %s, %s, %s);
                 """,
                 [
-                    (args.meta_table, "timestamp", "timestamp", False),
-                    (args.meta_table, "date", "date", False),
-                    (args.meta_table, "hour", "string", False),
-                    (args.meta_table, "__meta__offset", "integer", True),
-                    (args.meta_table, "__meta__partition", "integer", True),
-                    (args.meta_table, "__meta__topic", "string", True),
-                    (args.meta_table, "__meta__txn_target", "string", True),
+                    (args.meta_table, "timestamp", "timestamp", False, "micoseconds"),
+                    (args.meta_table, "date", "date", False, None),
+                    # (args.meta_table, "hour", "string", False, None),
+                    (args.meta_table, "__meta__offset", "long", True, None),
+                    (args.meta_table, "__meta__partition", "integer", True, None),
+                    (args.meta_table, "__meta__topic", "string", True, None),
+                    (args.meta_table, "__meta__txn_target", "string", True, None),
                 ],
             )
 
