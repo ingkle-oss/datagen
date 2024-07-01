@@ -25,7 +25,7 @@ def on_disconnect(client: mqtt.Client, userdata, flags, rc, properties):
         logging.error("Disconnection failed: %s", mqtt.connack_string(rc))
         return
 
-    logging.info("Connection successful, userdata: %s", userdata)
+    logging.info("MQTT Disconnection successful, userdata: %s", userdata)
     client.loop_stop()
 
 

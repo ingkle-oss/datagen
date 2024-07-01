@@ -88,7 +88,7 @@ if __name__ == "__main__":
                 VALUES (%s, %s, %s, %s, %s);
                 """,
                 [
-                    (args.meta_table, "timestamp", "timestamp", False, "micoseconds"),
+                    (args.meta_table, "timestamp", "timestamp", False, "micosecond"),
                     (args.meta_table, "date", "date", False, None),
                     # (args.meta_table, "hour", "string", False, None),
                     (args.meta_table, "__meta__offset", "long", True, None),
