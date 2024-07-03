@@ -95,6 +95,12 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--postgresql-update-interval",
+        help="PostgreSQL update interval in seconds",
+        type=int,
+        default=10,
+    )
 
     parser.add_argument(
         "--field-int-count", help="Number of int field", type=int, default=5
@@ -229,6 +235,7 @@ if __name__ == "__main__":
     print(len(fake.fields), fake.fields)
 
     try:
+        prev = datetime.now(timezone.utc)
         while True:
             now = datetime.now(timezone.utc)
             for idx in range(args.rate):
@@ -251,6 +258,16 @@ if __name__ == "__main__":
                     logging.debug("Published mid: %s, return code: %s", ret.mid, ret.rc)
                 except RuntimeError as e:
                     logging.error("RuntimeError: %s", e)
+
+            if (
+                args.use_postgresql
+                and (now - prev).total_seconds() > args.postgresql_update_interval
+            ):
+                logging.info("Updating fields from postgresql...")
+                fake.update_fields(args.postgresql_table_name)
+                print("Produced fields: ")
+                print(len(fake.fields), fake.fields)
+                prev = now
 
             wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
             wait = 0.0 if wait < 0 else wait

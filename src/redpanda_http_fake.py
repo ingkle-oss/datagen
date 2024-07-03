@@ -81,6 +81,12 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--postgresql-update-interval",
+        help="PostgreSQL update interval in seconds",
+        type=int,
+        default=10,
+    )
 
     # Faker
     parser.add_argument(
@@ -187,6 +193,7 @@ if __name__ == "__main__":
     print("Produced fields: ")
     print(len(fake.fields), fake.fields)
 
+    prev = datetime.now(timezone.utc)
     while True:
         now = datetime.now(timezone.utc)
         records = []
@@ -219,6 +226,16 @@ if __name__ == "__main__":
         logging.info(
             f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
         )
+
+        if (
+            args.use_postgresql
+            and (now - prev).total_seconds() > args.postgresql_update_interval
+        ):
+            logging.info("Updating fields from postgresql...")
+            fake.update_fields(args.postgresql_table_name)
+            print("Produced fields: ")
+            print(len(fake.fields), fake.fields)
+            prev = now
 
         wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
         wait = 0.0 if wait < 0 else wait

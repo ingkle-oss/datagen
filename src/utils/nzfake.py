@@ -135,11 +135,25 @@ def field_model(tablename):
 
 
 class NZFakerStore:
+    engine = None
+    Field = None
     fake = None
     fields = []
     str_choice: list[str]
     str_length: int
     str_cardinality: int
+
+    def update_fields(self, table_name):
+        with Session(self.engine, expire_on_commit=False) as session:
+            self.fields = sorted(
+                [
+                    {"name": s.name, "type": s.type, "subtype": s.subtype}
+                    for s in session.scalars(
+                        select(self.Field).where(self.Field.table_name == table_name)
+                    ).all()
+                ],
+                key=lambda x: x["name"],
+            )
 
     def __init__(
         self,
@@ -154,24 +168,14 @@ class NZFakerStore:
         str_length=10,
         str_cardinality=0,
     ):
-        engine = create_engine(
+        self.fake = Faker(use_weighting=False)
+
+        self.engine = create_engine(
             f"postgresql://{username}:{password}@{host}:{port}/{database}",
             echo=True if loglevel == "DEBUG" else False,
         )
-
-        field = field_model(table)
-        with Session(engine, expire_on_commit=False) as session:
-            self.fields = sorted(
-                [
-                    {"name": s.name, "type": s.type, "subtype": s.subtype}
-                    for s in session.scalars(
-                        select(field).where(field.table_name == table_name)
-                    ).all()
-                ],
-                key=lambda x: x["name"],
-            )
-
-        self.fake = Faker(use_weighting=False)
+        self.Field = field_model(table)
+        self.update_fields(table_name)
 
         self.str_length = str_length if str_length and str_length > 0 else 0
         self.str_cardinality = (
