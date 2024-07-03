@@ -4,10 +4,10 @@ import logging
 import signal
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from ssl import create_default_context
 
 import paho.mqtt.client as mqtt
-import pendulum
 from fastnumbers import check_float
 
 from utils.utils import download_s3file, encode, load_values
@@ -174,9 +174,9 @@ if __name__ == "__main__":
 
             try:
                 while True:
-                    now = pendulum.now("UTC")
+                    now = datetime.now(timezone.utc)
                     for idx in range(args.rate):
-                        epoch = now + pendulum.duration(
+                        epoch = now + timedelta(
                             microseconds=idx * (1000000 / args.rate)
                         )
 
@@ -212,7 +212,7 @@ if __name__ == "__main__":
                         except RuntimeError as e:
                             logging.error("RuntimeError: %s", e)
 
-                    wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+                    wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
                     wait = 0.0 if wait < 0 else wait
                     logging.info("Waiting for %f seconds...", wait)
                     time.sleep(wait)
@@ -224,11 +224,9 @@ if __name__ == "__main__":
     val_idx = 0
     try:
         while True:
-            now = pendulum.now("UTC")
+            now = datetime.now(timezone.utc)
             for idx in range(args.rate):
-                epoch = now + pendulum.duration(
-                    microseconds=idx * (1000000 / args.rate)
-                )
+                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
                 row = {
                     "timestamp": int(epoch.timestamp() * 1e6),
@@ -249,7 +247,7 @@ if __name__ == "__main__":
                 except RuntimeError as e:
                     logging.error("RuntimeError: %s", e)
 
-            wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+            wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
             wait = 0.0 if wait < 0 else wait
             logging.info("Waiting for %f seconds...", wait)
             time.sleep(wait)

@@ -6,13 +6,12 @@ import argparse
 import json
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 
-import pendulum
 import requests
 from fastnumbers import check_float
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from utils.nzfake import NZFaker
 from utils.utils import download_s3file, encode, load_values
 
 if __name__ == "__main__":
@@ -131,12 +130,10 @@ if __name__ == "__main__":
             body_start = f.tell()
 
             while True:
-                now = pendulum.now("UTC")
+                now = datetime.now(timezone.utc)
                 records = []
                 for idx in range(args.rate):
-                    epoch = now + pendulum.duration(
-                        microseconds=idx * (1000000 / args.rate)
-                    )
+                    epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
                     value = f.readline()
                     if not value:
@@ -180,7 +177,7 @@ if __name__ == "__main__":
                     f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
                 )
 
-                wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+                wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
                 wait = 0.0 if wait < 0 else wait
                 logging.info("Waiting for %f seconds...", wait)
                 time.sleep(wait)
@@ -189,10 +186,10 @@ if __name__ == "__main__":
     values = load_values(filepath, args.input_type)
     val_idx = 0
     while True:
-        now = pendulum.now("UTC")
+        now = datetime.now(timezone.utc)
         records = []
         for idx in range(args.rate):
-            epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
+            epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
             value = {
                 "timestamp": int(epoch.timestamp() * 1e6),
@@ -224,7 +221,7 @@ if __name__ == "__main__":
             f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
         )
 
-        wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+        wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
         wait = 0.0 if wait < 0 else wait
         logging.info("Waiting for %f seconds...", wait)
         time.sleep(wait)

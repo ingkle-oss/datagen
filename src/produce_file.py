@@ -7,8 +7,8 @@ import argparse
 import json
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 
-import pendulum
 from confluent_kafka import KafkaException, Producer
 from fastnumbers import check_float
 
@@ -230,11 +230,9 @@ if __name__ == "__main__":
             body_start = f.tell()
 
             while True:
-                now = pendulum.now("UTC")
+                now = datetime.now(timezone.utc)
                 for idx in range(args.rate):
-                    epoch = now + pendulum.duration(
-                        microseconds=idx * (1000000 / args.rate)
-                    )
+                    epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
                     row = f.readline()
                     if not row:
@@ -270,7 +268,7 @@ if __name__ == "__main__":
                 if args.flush:
                     producer.flush()
 
-                wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+                wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
                 wait = 0.0 if wait < 0 else wait
                 logging.info("Waiting for %f seconds...", wait)
                 time.sleep(wait)
@@ -282,9 +280,9 @@ if __name__ == "__main__":
     values = load_values(filepath, args.input_type)
     val_idx = 0
     while True:
-        now = pendulum.now("UTC")
+        now = datetime.now(timezone.utc)
         for idx in range(args.rate):
-            epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
+            epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
             row = {
                 "timestamp": int(epoch.timestamp() * 1e6),
@@ -309,7 +307,7 @@ if __name__ == "__main__":
         if args.flush:
             producer.flush()
 
-        wait = 1.0 - (pendulum.now("UTC") - now).total_seconds()
+        wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
         wait = 0.0 if wait < 0 else wait
         logging.info("Waiting for %f seconds...", wait)
         time.sleep(wait)
