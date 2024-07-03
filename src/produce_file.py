@@ -247,7 +247,7 @@ if __name__ == "__main__":
                         row = json.loads(row)
 
                     row = {
-                        "timestamp": epoch.timestamp() * 1e6,
+                        "timestamp": int(epoch.timestamp() * 1e6),
                         **key_vals,
                         **row,
                     }
@@ -285,16 +285,11 @@ if __name__ == "__main__":
             epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
 
             row = {
-                "timestamp": epoch.timestamp() * 1e6,
+                "timestamp": int(epoch.timestamp() * 1e6),
                 **key_vals,
                 **values[val_idx],
             }
             val_idx = (val_idx + 1) % len(values)
-
-            if args.field_date:
-                row["date"] = epoch.format("YYYY-MM-DD")
-            if args.field_hour:
-                row["hour"] = epoch.format("HH")
 
             producer.poll(0)
             try:

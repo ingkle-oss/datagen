@@ -3,8 +3,7 @@ import string
 from datetime import datetime
 
 from faker import Faker
-from sqlalchemy import Boolean, DateTime, Identity, String, create_engine, func, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Boolean, DateTime, String, create_engine, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 
@@ -160,13 +159,13 @@ class NZFakerStore:
             echo=True if loglevel == "DEBUG" else False,
         )
 
-        Field = field_model(table)
+        field = field_model(table)
         with Session(engine, expire_on_commit=False) as session:
             self.fields = sorted(
                 [
                     {"name": s.name, "type": s.type, "subtype": s.subtype}
                     for s in session.scalars(
-                        select(Field).where(Field.table_name == table_name)
+                        select(field).where(field.table_name == table_name)
                     ).all()
                 ],
                 key=lambda x: x["name"],
