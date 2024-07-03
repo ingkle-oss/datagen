@@ -1,6 +1,6 @@
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from faker import Faker
 from sqlalchemy import Boolean, DateTime, String, create_engine, func, select
@@ -199,9 +199,16 @@ class NZFakerStore:
             elif field["type"] == "double":
                 values[field["name"]] = random.uniform(-(2**63), (2**63) - 1)
             elif field["type"] == "timestamp":
-                values[field["name"]] = datetime.now()
+                if field["name"] != "timestamp":  # 'timestamp' is a reserved field
+                    values[field["name"]] = int(
+                        (
+                            datetime.now() + timedelta(hours=random.randint(-720, 0))
+                        ).timestamp()
+                        * 1e6
+                    )
             elif field["type"] == "date":
-                values[field["name"]] = datetime.now().date()
+                if field["name"] != "date":  # 'date' is a reserved/hidden field
+                    values[field["name"]] = datetime.now().date()
             elif field["type"] == "string":
                 if self.str_cardinality > 0:
                     values[field["name"]] = random.choice(self.str_choice)
