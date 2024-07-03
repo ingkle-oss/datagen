@@ -193,7 +193,7 @@ if __name__ == "__main__":
             epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
 
             value = {
-                "timestamp": epoch.timestamp(),
+                "timestamp": epoch.timestamp() * 1e6,
                 **key_vals,
                 **fake.values(),
             }

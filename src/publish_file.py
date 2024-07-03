@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import signal
 import sys
@@ -200,7 +201,7 @@ if __name__ == "__main__":
                             row = json.loads(row)
 
                         row = {
-                            "timestamp": epoch.timestamp(),
+                            "timestamp": epoch.timestamp() * 1e6,
                             **key_vals,
                             **row,
                         }
@@ -242,7 +243,7 @@ if __name__ == "__main__":
                 )
 
                 row = {
-                    "timestamp": epoch.timestamp(),
+                    "timestamp": epoch.timestamp() * 1e6,
                     **key_vals,
                     **values[val_idx],
                 }

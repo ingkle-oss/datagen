@@ -236,7 +236,7 @@ if __name__ == "__main__":
                 )
 
                 row = {
-                    "timestamp": epoch.timestamp(),
+                    "timestamp": epoch.timestamp() * 1e6,
                     **key_vals,
                     **fake.values(),
                 }
