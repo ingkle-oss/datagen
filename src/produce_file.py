@@ -17,56 +17,61 @@ from utils.utils import download_s3file, encode, load_values
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--bootstrap-servers",
+        "--kafka-bootstrap-servers",
         help="Kafka bootstrap servers",
         default="redpanda.redpanda.svc.cluster.local:9093",
     )
     parser.add_argument(
-        "--security-protocol", help="Kafka security protocol", default="SASL_SSL"
+        "--kafka-security-protocol",
+        help="Kafka security protocol",
+        default="SASL_PLAINTEXT",
     )
     parser.add_argument(
-        "--sasl-mechanism", help="Kafka SASL mechanism", default="SCRAM-SHA-512"
+        "--kafka-sasl-mechanism", help="Kafka SASL mechanism", default="SCRAM-SHA-512"
     )
     parser.add_argument(
-        "--sasl-username", help="Kafka SASL plain username", required=True
+        "--kafka-sasl-username", help="Kafka SASL plain username", required=True
     )
     parser.add_argument(
-        "--sasl-password", help="Kafka SASL plain password", required=True
+        "--kafka-sasl-password", help="Kafka SASL plain password", required=True
     )
     parser.add_argument(
-        "--ssl-ca-location",
-        help="Kafka SSL CA file",
-        default=None,
+        "--kafka-ssl-ca-location", help="Kafka SSL CA file", default=None
+    )
+    parser.add_argument(
+        "--kafka-auto-offset-reset",
+        help="Kafka auto offset reset (earliest/latest)",
+        default="latest",
     )
 
-    parser.add_argument("--topic", help="Kafka topic name", required=True)
-    parser.add_argument("--key", help="Kafka partition key", default=None)
+    parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
+    parser.add_argument("--kafka-key", help="Kafka partition key", default=None)
 
     parser.add_argument(
-        "--compression-type",
+        "--kafka-compression-type",
         help="Kafka producer compression type",
         choices=["gzip", "snappy", "lz4", "zstd", "none"],
         default="gzip",
     )
     parser.add_argument(
-        "--delivery-timeout-ms", help="delivery timeout in ms", default=30000
+        "--kafka-delivery-timeout-ms", help="delivery timeout in ms", default=30000
     )
-    parser.add_argument("--linger-ms", help="linger ms", default=5)
+    parser.add_argument("--kafka-linger-ms", help="linger ms", default=1000)
     parser.add_argument(
-        "--batch-num-messages",
-        help="Maximum number of messages batched in one MessageSet",
-        default=10000,
-    )
-    parser.add_argument(
-        "--batch-size",
+        "--kafka-batch-size",
         help="Maximum size of size (in bytes) of all messages batched in one MessageSet",
         default=1000000,
     )
     parser.add_argument(
-        "--message-max-bytes", help="message max bytes", default=1000000
+        "--kafka-batch-num-messages",
+        help="Maximum number of messages batched in one MessageSet",
+        default=10000,
     )
     parser.add_argument(
-        "--acks",
+        "--kafka-message-max-bytes", help="message max bytes", default=1000000
+    )
+    parser.add_argument(
+        "--kafka-acks",
         help="Idempotent delivery option ",
         choices=[1, 0, -1],
         type=int,
@@ -151,32 +156,33 @@ if __name__ == "__main__":
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
     configs = {
-        "bootstrap.servers": args.bootstrap_servers,
-        "security.protocol": args.security_protocol,
-        "compression.type": args.compression_type,
-        "delivery.timeout.ms": args.delivery_timeout_ms,
-        "linger.ms": args.linger_ms,
-        "batch.size": args.batch_size,
-        "batch.num.messages": args.batch_num_messages,
-        "message.max.bytes": args.message_max_bytes,
-        "acks": args.acks,
+        "auto.offset.reset": args.kafka_auto_offset_reset,
+        "bootstrap.servers": args.kafka_bootstrap_servers,
+        "security.protocol": args.kafka_security_protocol,
+        "compression.type": args.kafka_compression_type,
+        "delivery.timeout.ms": args.kafka_delivery_timeout_ms,
+        "linger.ms": args.kafka_linger_ms,
+        "batch.size": args.kafka_batch_size,
+        "batch.num.messages": args.kafka_batch_num_messages,
+        "message.max.bytes": args.kafka_message_max_bytes,
+        "acks": args.kafka_acks,
     }
-    if args.security_protocol.startswith("SASL"):
+    if args.kafka_security_protocol.startswith("SASL"):
         configs.update(
             {
-                "sasl.mechanism": args.sasl_mechanism,
-                "sasl.username": args.sasl_username,
-                "sasl.password": args.sasl_password,
+                "sasl.mechanism": args.kafka_sasl_mechanism,
+                "sasl.username": args.kafka_sasl_username,
+                "sasl.password": args.kafka_sasl_password,
             }
         )
-    if args.security_protocol.endswith("SSL"):
+    if args.kafka_security_protocol.endswith("SSL"):
         # * Mac: brew install openssl
         # * Ubuntu: sudo apt install ca-certificates
         configs.update(
             {
                 # ! https://github.com/confluentinc/confluent-kafka-python/issues/1610
                 "enable.ssl.certificate.verification": False,
-                "ssl.ca.location": args.ssl_ca_location,
+                "ssl.ca.location": args.kafka_ssl_ca_location,
             }
         )
 
@@ -266,15 +272,15 @@ if __name__ == "__main__":
                     producer.poll(0)
                     try:
                         producer.produce(
-                            args.topic,
+                            args.kafka_topic,
                             encode(row, args.output_type),
-                            args.key.encode("utf-8") if args.key else None,
+                            args.kafka_key.encode("utf-8") if args.kafka_key else None,
                             on_delivery=delivery_report,
                         )
                     except KafkaException as e:
                         logging.error("KafkaException: %s", e)
 
-                    logging.debug("Produced: %s:%s", args.key, row)
+                    logging.debug("Produced: %s:%s", args.kafka_key, row)
 
                 if args.flush:
                     producer.flush()
@@ -310,15 +316,15 @@ if __name__ == "__main__":
             producer.poll(0)
             try:
                 producer.produce(
-                    args.topic,
+                    args.kafka_topic,
                     encode(row, args.output_type),
-                    args.key.encode("utf-8") if args.key else None,
+                    args.kafka_key.encode("utf-8") if args.kafka_key else None,
                     on_delivery=delivery_report,
                 )
             except KafkaException as e:
                 logging.error("KafkaException: %s", e)
 
-            logging.debug("Produced: %s:%s", args.key, row)
+            logging.debug("Produced: %s:%s", args.kafka_key, row)
 
         if args.flush:
             producer.flush()
