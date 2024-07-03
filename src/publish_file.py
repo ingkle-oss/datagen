@@ -33,12 +33,16 @@ def on_disconnect(client: mqtt.Client, userdata, flags, rc, properties):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
+    # MQTT
     parser.add_argument(
         "--mqtt-host", help="MQTT host", default="emqx.emqx.svc.cluster.local"
     )
     parser.add_argument("--mqtt-port", help="MQTT port", type=int, default=1883)
     parser.add_argument(
-        "--mqtt-transport", help="MQTT protocol (tcp, websockets)", default="tcp"
+        "--mqtt-transport",
+        help="MQTT protocol",
+        choices=["tcp", "websockets"],
+        default="tcp",
     )
     parser.add_argument(
         "--mqtt-tls",
@@ -54,7 +58,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--mqtt-username", help="MQTT username", required=True)
     parser.add_argument("--mqtt-password", help="MQTT password", required=True)
-    parser.add_argument("--mqtt-topic", help="MQTT topic", default="test-topic")
+    parser.add_argument("--mqtt-topic", help="MQTT topic", required=True)
+    parser.add_argument("--mqtt-client-id", help="MQTT client id", required=True)
     parser.add_argument("--mqtt-qos", help="MQTT QOS: 0 | 1 | 2", type=int, default=0)
     parser.add_argument(
         "--mqtt-max-messages", help="MQTT max inflight messages", type=int, default=20
@@ -118,7 +123,7 @@ if __name__ == "__main__":
         key_vals[key] = val
 
     mqttc = mqtt.Client(
-        client_id=f"mqtt-publisher-tests-{time.time()}",
+        client_id=args.mqtt_client_id,
         userdata=args,
         protocol=mqtt.MQTTv311,
         transport=args.mqtt_transport,

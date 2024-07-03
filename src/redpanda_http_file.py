@@ -17,6 +17,8 @@ from utils.utils import download_s3file, encode, load_values
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+
+    # PandaProxy
     parser.add_argument(
         "--redpanda-host",
         help="Redpanda proxy host",
@@ -40,6 +42,8 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+
+    # Kafka
     parser.add_argument(
         "--kafka-sasl-username", help="Kafka SASL plain username", required=True
     )

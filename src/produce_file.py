@@ -16,6 +16,8 @@ from utils.utils import download_s3file, encode, load_values
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+
+    # Kafka
     parser.add_argument(
         "--kafka-bootstrap-servers",
         help="Kafka bootstrap servers",
@@ -90,7 +92,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--bigfile",
         help="Whether file is big or not (default: False)",
-        action=argparse.BooleanOptionalAction,
+        action="store_true",
         default=False,
     )
     parser.add_argument(
@@ -122,7 +124,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--flush",
-        help="Flush after each produce (default: True)",
+        help="Flush after each produce",
         action=argparse.BooleanOptionalAction,
         default=True,
     )

@@ -32,12 +32,16 @@ def on_disconnect(client: mqtt.Client, userdata, flags, rc, properties):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
+    # MQTT
     parser.add_argument(
         "--mqtt-host", help="MQTT host", default="emqx.emqx.svc.cluster.local"
     )
     parser.add_argument("--mqtt-port", help="MQTT port", type=int, default=1883)
     parser.add_argument(
-        "--mqtt-transport", help="MQTT protocol (tcp, websockets)", default="tcp"
+        "--mqtt-transport",
+        help="MQTT protocol",
+        choices=["tcp", "websockets"],
+        default="tcp",
     )
     parser.add_argument(
         "--mqtt-tls",
@@ -53,7 +57,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--mqtt-username", help="MQTT username", required=True)
     parser.add_argument("--mqtt-password", help="MQTT password", required=True)
-    parser.add_argument("--mqtt-topic", help="MQTT topic", default="test-topic")
+    parser.add_argument("--mqtt-topic", help="MQTT topic", required=True)
+    parser.add_argument("--mqtt-client-id", help="MQTT client id", required=True)
     parser.add_argument("--mqtt-qos", help="MQTT QOS: 0 | 1 | 2", type=int, default=0)
     parser.add_argument(
         "--mqtt-max-messages", help="MQTT max inflight messages", type=int, default=20
@@ -65,13 +70,31 @@ if __name__ == "__main__":
         default=65555,
     )
 
-    parser.add_argument("--postgresql-host", help="postgresql host")
-    parser.add_argument("--postgresql-port", help="Postgresql port", type=int)
-    parser.add_argument("--postgresql-username", help="Postgresql username")
-    parser.add_argument("--postgresql-password", help="Postgresql password")
-    parser.add_argument("--postgresql-database", help="Postgresql database name")
-    parser.add_argument("--postgresql-table")
+    # PostgreSQL
+    parser.add_argument(
+        "--postgresql-host",
+        help="PostgreSQL host",
+        default="postgresql-ha-pgpool.postgresql-ha.svc.cluster.local",
+    )
+    parser.add_argument(
+        "--postgresql-port", help="PostgreSQL port", type=int, default=5432
+    )
+    parser.add_argument("--postgresql-username", help="PostgreSQL username")
+    parser.add_argument("--postgresql-password", help="PostgreSQL password")
+    parser.add_argument(
+        "--postgresql-database", help="PostgreSQL database", default="store"
+    )
+    parser.add_argument(
+        "--postgresql-schema", help="PostgreSQL schema", default="public"
+    )
+    parser.add_argument("--postgresql-table", help="PostgreSQL table", default="fields")
     parser.add_argument("--postgresql-table-name", help="table name for fake schema")
+    parser.add_argument(
+        "--use-postgresql",
+        help="Use PostgreSQL store",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
 
     parser.add_argument(
         "--field-int-count", help="Number of int field", type=int, default=5
@@ -132,7 +155,7 @@ if __name__ == "__main__":
         key_vals[key] = val
 
     mqttc = mqtt.Client(
-        client_id=f"mqtt-publisher-tests-{time.time()}",
+        client_id=args.mqtt_client_id,
         userdata=args,
         protocol=mqtt.MQTTv311,
         transport=args.mqtt_transport,
@@ -163,17 +186,21 @@ if __name__ == "__main__":
     mqttc.connect(host=args.mqtt_host, port=args.mqtt_port)
     mqttc.loop_start()
 
-    if all(
-        [
-            args.postgresql_host,
-            args.postgresql_port,
-            args.postgresql_username,
-            args.postgresql_password,
-            args.postgresql_database,
-            args.postgresql_table,
-            args.postgresql_table_name,
-        ]
-    ):
+    if args.use_postgresql:
+        if not all(
+            [
+                args.postgresql_host,
+                args.postgresql_port,
+                args.postgresql_username,
+                args.postgresql_password,
+                args.postgresql_database,
+                args.postgresql_table,
+                args.postgresql_table_name,
+            ]
+        ):
+            raise ValueError("postgresql options are not enough")
+
+        print("Using faker from PostgreSQL store DB...")
         fake = NZFakerStore(
             host=args.postgresql_host,
             port=args.postgresql_port,
@@ -186,21 +213,8 @@ if __name__ == "__main__":
             str_length=args.field_str_length,
             str_cardinality=args.field_str_cardinality,
         )
-        print("FakerStore is created")
-    elif any(
-        [
-            args.postgresql_host,
-            args.postgresql_port,
-            args.postgresql_username,
-            args.postgresql_password,
-            args.postgresql_database,
-            args.postgresql_table,
-            args.postgresql_table_name,
-        ]
-    ):
-        print(args)
-        raise ValueError("postgresql options are not enough")
     else:
+        print("Using faker from parameters...")
         fake = NZFaker(
             int_count=args.field_int_count,
             float_count=args.field_float_count,
@@ -211,7 +225,6 @@ if __name__ == "__main__":
             str_length=args.field_str_length,
             str_cardinality=args.field_str_cardinality,
         )
-        print("Faker is created")
     print("Produced fields: ")
     print(len(fake.fields), fake.fields)
 
