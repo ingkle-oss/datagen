@@ -17,38 +17,40 @@ from utils.utils import encode
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--host",
-        help="Pandas proxy host",
+        "--redpanda-host",
+        help="Redpanda proxy host",
         default="redpanda.redpanda.svc.cluster.local",
     )
     parser.add_argument(
-        "--port",
-        help="Pandas proxy port",
+        "--redpanda-port",
+        help="Redpanda proxy port",
         type=int,
         default=8082,
     )
     parser.add_argument(
-        "--ssl",
-        help="Pandas proxy http scheme",
+        "--redpanda-ssl",
+        help="Redpanda proxy http scheme",
         action=argparse.BooleanOptionalAction,
         default=False,
     )
     parser.add_argument(
-        "--verify",
-        help="Pandas proxy http verify",
+        "--redpanda-verify",
+        help="Redpanda proxy http verify",
         action=argparse.BooleanOptionalAction,
         default=False,
     )
     parser.add_argument(
-        "--sasl-username", help="Kafka SASL plain username", required=True
+        "--kafka-sasl-username", help="Kafka SASL plain username", required=True
     )
     parser.add_argument(
-        "--sasl-password", help="Kafka SASL plain password", required=True
+        "--kafka-sasl-password", help="Kafka SASL plain password", required=True
     )
 
-    parser.add_argument("--topic", help="Kafka topic name", required=True)
-    parser.add_argument("--key", help="Kafka partition key", default=None)
-    parser.add_argument("--partition", help="Kafka partition", type=int, default=0)
+    parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
+    parser.add_argument("--kafka-key", help="Kafka partition key", default=None)
+    parser.add_argument(
+        "--kafka-partition", help="Kafka partition", type=int, default=0
+    )
 
     parser.add_argument("--postgresql-host", help="postgresql host")
     parser.add_argument("--postgresql-port", help="Postgresql port", type=int)
@@ -125,7 +127,7 @@ if __name__ == "__main__":
     )
 
     requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-    scheme = "https" if args.ssl else "http"
+    scheme = "https" if args.redpanda_ssl else "http"
 
     key_vals = {}
     for kv in args.key_vals:
@@ -186,43 +188,39 @@ if __name__ == "__main__":
 
     while True:
         now = pendulum.now("UTC")
-        rows = []
+        records = []
         for idx in range(args.rate):
             epoch = now + pendulum.duration(microseconds=idx * (1000000 / args.rate))
 
-            row = {
+            value = {
                 "timestamp": epoch.timestamp(),
                 **key_vals,
                 **fake.values(),
             }
             if args.field_date:
-                row["date"] = epoch.format("YYYY-MM-DD")
+                value["date"] = epoch.format("YYYY-MM-DD")
             if args.field_hour:
-                row["hour"] = epoch.format("HH")
+                value["hour"] = epoch.format("HH")
 
-            if args.key is None:
-                row = dict(
-                    value=encode(row, args.output_type), partition=args.partition
-                )
+            if args.kafka_key is None:
+                record = dict(value=value, partition=args.kafka_partition)
             else:
-                row = dict(
-                    key=args.key.encode("utf-8"),
-                    value=encode(row, args.output_type),
-                    partition=args.partition,
+                record = dict(
+                    key=args.kafka_key.encode("utf-8"),
+                    value=value,
+                    partition=args.kafka_partition,
                 )
-            rows.append(row)
+
+            records.append(record)
 
         res = requests.post(
-            url=f"{scheme}://{args.sasl_username}:{args.sasl_password}@{args.host}:{args.port}/topics/{args.topic}",
-            data=json.dumps(dict(records=rows)),
-            headers={
-                "Content-Type": "application/vnd.kafka.json.v2+json",
-                "content-encoding": "gzip",
-            },
-            verify=args.verify,
+            url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
+            data=encode({"records": records}, args.output_type),
+            headers={"Content-Type": "application/vnd.kafka.json.v2+json"},
+            verify=args.redpanda_verify,
         ).json()
         logging.info(
-            f"Total {len(rows)} messages delivered: {json.dumps(res, indent=2)}"
+            f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
         )
 
         wait = 1.0 - (pendulum.now() - now).total_seconds()

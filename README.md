@@ -18,39 +18,39 @@ Run Kafka producer
 
 ```bash
 # Produce fake data
-python3 src/produce_fake.py --bootstrap-servers BOOTSTRAP_SERVER --security-protocol SASL_PLAINTEXT --sasl-username USERNAME --sasl-password PASSWORD --topic test-topic --rate 1 --report-interval 1
+python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 --report-interval 1
 
 # Produce fake data by using predefined schema
- python3 src/produce_fake.py --bootstrap-servers BOOTSTRAP_SERVER --security-protocol SASL_PLAINTEXT --sasl-username USERNAME --sasl-password PASSWORD --topic test-topic --rate 1 --report-interval 1 --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-table-name SCHEMA_TABLE_NAME
+ python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 --report-interval 1 --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-table-name SCHEMA_TABLE_NAME
 
 # Produce a file
-python3 src/produce_file.py --bootstrap-servers BOOTSTRAP_SERVER --security-protocol SASL_PLAINTEXT --sasl-username USERNAME --sasl-password PASSWORD --topic test-topic --filepath ./samples/loop.jsonl
+python3 src/produce_file.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --filepath ./samples/loop.jsonl
 
 # Post fake data to pandas http
-python3 src/pandas_http_fake.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --sasl-username USERNAME --sasl-password PASSWORD --ssl --topic test-topic --rate 1
+python3 src/pandas_http_fake.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic --rate 1
 
 # Post a file to pandas http
-python3 src/pandas_http_file.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --sasl-username USERNAME --sasl-password PASSWORD --ssl --topic test-topic --filepath ./samples/loop.jsonl --rate 1
+python3 src/pandas_http_file.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic --filepath ./samples/loop.jsonl --rate 1
 ```
 
 Run MQTT publisher
 
 ```bash
 # Publish fake data
-python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1
+python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1
 
 # Publish fake data by using predefined schema
- python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1 --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-table-name SCHEMA_TABLE_NAME
+ python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1 --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-table-name SCHEMA_TABLE_NAME
 
 # Publish a file
- python3 src/publish_file.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1 --filepath loop.jsonl
+ python3 src/publish_file.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1 --filepath loop.jsonl
 ```
 
 ## Run on docker
 
 ```bash
 # Produce fake data
-docker run --rm -it ingkle/datagen python3 produce_fake.py --bootstrap-servers BOOTSTRAP_SERVER --security-protocol SASL_PLAINTEXT --sasl-username USERNAME --sasl-password PASSWORD --topic test-topic --rate 1 --report-interval 1
+docker run --rm -it ingkle/datagen python3 produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 --report-interval 1
 ```
 
 ## Run on K8s
