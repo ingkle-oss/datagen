@@ -79,19 +79,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--field-date",
-        help="Add date field (e.g. 2024-02-26)",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    parser.add_argument(
-        "--field-hour",
-        help="Add date field (e.g 12)",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-
-    parser.add_argument(
         "--s3endpoint",
         help="S3 url",
         default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
@@ -264,10 +251,6 @@ if __name__ == "__main__":
                         **key_vals,
                         **row,
                     }
-                    if args.field_date:
-                        row["date"] = epoch.format("YYYY-MM-DD")
-                    if args.field_hour:
-                        row["hour"] = epoch.format("HH")
 
                     producer.poll(0)
                     try:

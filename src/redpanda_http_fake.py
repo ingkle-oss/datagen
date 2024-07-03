@@ -87,18 +87,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--field-name-count", help="Number of name field", type=int, default=0
     )
-    parser.add_argument(
-        "--field-date",
-        help="Add date field (e.g. 2024-02-26)",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    parser.add_argument(
-        "--field-hour",
-        help="Add date field (e.g 12)",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
 
     parser.add_argument(
         "--output-type",
@@ -197,10 +185,6 @@ if __name__ == "__main__":
                 **key_vals,
                 **fake.values(),
             }
-            if args.field_date:
-                value["date"] = epoch.format("YYYY-MM-DD")
-            if args.field_hour:
-                value["hour"] = epoch.format("HH")
 
             if args.kafka_key is None:
                 record = dict(value=value, partition=args.kafka_partition)
