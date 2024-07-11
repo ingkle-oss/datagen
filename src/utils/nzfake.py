@@ -87,19 +87,18 @@ class Base(DeclarativeBase):
 
 
 def field_model(tablename):
-
     class Field(Base):
-
         __tablename__ = tablename
 
-        type: Mapped[str] = mapped_column(String, nullable=True)
-        subtype: Mapped[str] = mapped_column(String, nullable=True)
         name: Mapped[str] = mapped_column(String, primary_key=True)
         table_name: Mapped[str] = mapped_column(String, primary_key=True)
-        nullable: Mapped[str] = mapped_column(Boolean, nullable=True)
+        alias: Mapped[str] = mapped_column(String, nullable=True)
+
+        type: Mapped[str] = mapped_column(String, nullable=False)
+        subtype: Mapped[str] = mapped_column(String, nullable=True)
+        nullable: Mapped[str] = mapped_column(Boolean, nullable=False)
         comment: Mapped[str] = mapped_column(String, nullable=True)
-        data_source: Mapped[str] = mapped_column(String, nullable=True)
-        data_order: Mapped[str] = mapped_column(String, nullable=True)
+
         created_at: Mapped[str] = mapped_column(
             DateTime, server_default=func.now(), nullable=True
         )
@@ -109,25 +108,23 @@ def field_model(tablename):
 
         def __init__(
             self,
+            name,
+            table_name,
+            alias,
             type,
             subtype,
-            name,
-            table,
             nullable,
             comment,
-            data_source,
-            data_order,
             created_at,
             updated_at,
         ):
+            self.name = name
+            self.table_name = table_name
+            self.alias = alias
             self.type = type
             self.subtype = subtype
-            self.name = name
-            self.table_name = table
             self.nullable = nullable
             self.comment = comment
-            self.data_source = data_source
-            self.data_order = data_order
             self.created_at = created_at
             self.updated_at = updated_at
 
