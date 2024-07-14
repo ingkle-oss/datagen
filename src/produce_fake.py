@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 from confluent_kafka import KafkaException, Producer
 
-from utils.nzfake import NZFaker, NZFakerStore
+from utils.nzfake import NZFaker, NZFakerEdge, NZFakerStore
 from utils.utils import encode
 
 if __name__ == "__main__":
@@ -88,22 +88,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--postgresql-port", help="PostgreSQL port", type=int, default=5432
     )
-    parser.add_argument("--postgresql-username", help="PostgreSQL username")
-    parser.add_argument("--postgresql-password", help="PostgreSQL password")
+    parser.add_argument(
+        "--postgresql-username", help="PostgreSQL username", default=None
+    )
+    parser.add_argument(
+        "--postgresql-password", help="PostgreSQL password", default=None
+    )
     parser.add_argument(
         "--postgresql-database", help="PostgreSQL database", default="store"
     )
-    parser.add_argument(
-        "--postgresql-schema", help="PostgreSQL schema", default="public"
-    )
-    parser.add_argument("--postgresql-table", help="PostgreSQL table", default="fields")
-    parser.add_argument("--postgresql-table-name", help="table name for fake schema")
-    parser.add_argument(
-        "--use-postgresql",
-        help="Use PostgreSQL store",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
+    parser.add_argument("--postgresql-table", help="PostgreSQL table", default=None)
     parser.add_argument(
         "--postgresql-update-interval",
         help="PostgreSQL update interval in seconds",
@@ -111,6 +105,36 @@ if __name__ == "__main__":
         default=10,
     )
 
+    # 1. if use_postgresql_store is True, then use PostgreSQL store
+    parser.add_argument(
+        "--use-postgresql-store",
+        help="Use PostgreSQL store",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument(
+        "--postgresql-store-table-name",
+        help="store table name for fake schema",
+        default=None,
+    )
+
+    # 2. if use_postgresql_edge is True, then use PostgreSQL edge data specs
+    parser.add_argument(
+        "--use-postgresql-edge",
+        help="Use PostgreSQL Edge",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument(
+        "--postgresql-edge-id",
+        help="Edge ID for fake schema",
+        default=None,
+    )
+
+    # 3. else, default Faker
+    parser.add_argument(
+        "--field-bool-count", help="Number of bool field", type=int, default=0
+    )
     parser.add_argument(
         "--field-int-count", help="Number of int field", type=int, default=5
     )
@@ -157,7 +181,7 @@ if __name__ == "__main__":
         "--rate", help="records / seconds (1~1000000)", type=int, default=1
     )
     parser.add_argument(
-        "--report-interval", help="Delivery report interval", type=int, default=1
+        "--report-interval", help="Delivery report interval", type=int, default=10
     )
 
     parser.add_argument(
@@ -249,7 +273,7 @@ if __name__ == "__main__":
             )
             PREV_OFFSET[f"{partition}"] = offset
 
-    if args.use_postgresql:
+    if args.use_postgresql_store:
         if not all(
             [
                 args.postgresql_host,
@@ -258,10 +282,10 @@ if __name__ == "__main__":
                 args.postgresql_password,
                 args.postgresql_database,
                 args.postgresql_table,
-                args.postgresql_table_name,
+                args.postgresql_store_table_name,
             ]
         ):
-            raise ValueError("postgresql options are not enough")
+            raise ValueError("postgresql options are not enough for store")
 
         print("Using faker from PostgreSQL store DB...")
         fake = NZFakerStore(
@@ -271,14 +295,40 @@ if __name__ == "__main__":
             password=args.postgresql_password,
             database=args.postgresql_database,
             table=args.postgresql_table,
-            table_name=args.postgresql_table_name,
+            table_name=args.postgresql_store_table_name,
             loglevel=args.loglevel,
             str_length=args.field_str_length,
             str_cardinality=args.field_str_cardinality,
         )
+    elif args.use_postgresql_edge:
+        if not all(
+            [
+                args.postgresql_host,
+                args.postgresql_port,
+                args.postgresql_username,
+                args.postgresql_password,
+                args.postgresql_database,
+                args.postgresql_table,
+                args.postgresql_edge_id,
+            ]
+        ):
+            raise ValueError("postgresql options are not enough for edge data specs")
+
+        print("Using faker from PostgreSQL edge DB...")
+        fake = NZFakerEdge(
+            host=args.postgresql_host,
+            port=args.postgresql_port,
+            username=args.postgresql_username,
+            password=args.postgresql_password,
+            database=args.postgresql_database,
+            table=args.postgresql_table,
+            edge_id=args.postgresql_edge_id,
+            loglevel=args.loglevel,
+        )
     else:
         print("Using faker from parameters...")
         fake = NZFaker(
+            bool_count=args.field_bool_count,
             int_count=args.field_int_count,
             float_count=args.field_float_count,
             word_count=args.field_word_count,
@@ -288,8 +338,6 @@ if __name__ == "__main__":
             str_length=args.field_str_length,
             str_cardinality=args.field_str_cardinality,
         )
-    print("Produced fields: ")
-    print(len(fake.fields), fake.fields)
 
     prev = datetime.now(timezone.utc)
     while True:
@@ -319,14 +367,11 @@ if __name__ == "__main__":
         if args.flush:
             producer.flush()
 
-        if (
-            args.use_postgresql
-            and (now - prev).total_seconds() > args.postgresql_update_interval
-        ):
+        if (args.use_postgresql_store or args.use_postgresql_edge) and (
+            now - prev
+        ).total_seconds() > args.postgresql_update_interval:
             logging.info("Updating fields from postgresql...")
-            fake.update_fields(args.postgresql_table_name)
-            print("Produced fields: ")
-            print(len(fake.fields), fake.fields)
+            fake.update_schema()
             prev = now
 
         wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
