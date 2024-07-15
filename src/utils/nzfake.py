@@ -56,7 +56,7 @@ def _struct_to_value(format: str, size: int):
 
 
 def _datatype_to_value(
-    name: str, type: str, str_cardinality: int, str_choice: list[str], str_length: int
+    type: str, str_cardinality: int, str_choice: list[str], str_length: int
 ):
     value = None
     if type == "tinyint":
@@ -74,14 +74,12 @@ def _datatype_to_value(
     elif type == "double":
         value = random.uniform(-(2**63), (2**63) - 1)
     elif type == "timestamp":
-        if name != "timestamp":  # 'timestamp' is a reserved field
-            value = int(
-                (datetime.now() + timedelta(hours=random.randint(-720, 0))).timestamp()
-                * 1e6
-            )
+        value = int(
+            (datetime.now() + timedelta(hours=random.randint(-720, 0))).timestamp()
+            * 1e6
+        )
     elif type == "date":
-        if name != "date":  # 'date' is a reserved/hidden field
-            value = datetime.now().date()
+        value = datetime.now().date()
     elif type == "string":
         if str_cardinality > 0:
             value = random.choice(str_choice)
@@ -288,11 +286,15 @@ class NZFakerStore:
     def values(self) -> dict[str, any]:
         values = {}
         for field in self.fields:
-            if field["name"].startswith("__"):
+            if (
+                field["name"].startswith("__")
+                or field["name"] == "timestamp"
+                or field["name"] == "date"
+            ):
+                # 'timestamp' and 'date' is a reserved field for deltasync
                 continue
 
             values[field["name"]] = _datatype_to_value(
-                field["name"],
                 field["type"],
                 self.str_cardinality,
                 self.str_choice,

@@ -346,7 +346,7 @@ if __name__ == "__main__":
             epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
             row = {
-                "timestamp": int(epoch.timestamp() * 1e6),
+                "timestamp": int(epoch.timestamp() * 1e6),  # microsecond
                 **key_vals,
                 **fake.values(),
             }
