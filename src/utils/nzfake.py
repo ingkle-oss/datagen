@@ -42,7 +42,7 @@ def _struct_to_value(format: str, size: int):
         value = random.uniform(-(2**31), (2**31) - 1)
     elif format == "d":
         value = random.uniform(-(2**63), (2**63) - 1)
-    elif format.endswith("s") or format.endwith("p"):
+    elif format.endswith("s") or format.endswith("p"):
         str_length = size
         value = "".join(
             random.choice(string.ascii_letters + string.digits)
@@ -306,6 +306,7 @@ def edgedataspec_model(tablename):
     class EdgeDataSpecType(str, enum.Enum):
         ANALOG = "ANALOG"
         DIGITAL = "DIGITAL"
+        TEXT = "TEXT"
 
     class EdgeDataSpec(Base):
         __tablename__ = tablename
@@ -415,7 +416,7 @@ class NZFakerEdge:
         values = []
         if dataspec["bits"]:
             bits = 0
-            for bit in dataspec["bits"]:
+            for bit in reversed(dataspec["bits"]):
                 if bit:
                     bit = random.getrandbits(1)
                 else:
