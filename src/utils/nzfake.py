@@ -1,4 +1,5 @@
 import enum
+import logging
 import random
 import string
 import struct
@@ -245,8 +246,8 @@ class NZFakerStore:
                 ],
                 key=lambda x: x["name"],
             )
-            print(f"Produced fields length: {len(self.fields)}")
-            print(self.fields)
+            logging.info(f"Produced fields length: {len(self.fields)}")
+            logging.info(self.fields)
 
     def __init__(
         self,
@@ -386,8 +387,8 @@ class NZFakerEdge:
                 ],
                 key=lambda x: (x["edgeDataSourceId"], x["index"]),
             )
-            print(f"Produced fields length: {len(self.dataspecs)}")
-            print(self.dataspecs)
+            logging.info(f"Produced fields length: {len(self.dataspecs)}")
+            logging.info(self.dataspecs)
 
     def __init__(
         self,
@@ -436,7 +437,7 @@ class NZFakerEdge:
             elif dataspec["format"] == "q":
                 bits = bits | (-(bits & 0x8000000000000000))
             else:
-                print(f"Unsupported format ({dataspec['format']}) for bits")
+                logging.error(f"Unsupported format ({dataspec['format']}) for bits")
 
             values.append(bits)
         else:

@@ -76,12 +76,12 @@ if __name__ == "__main__":
         dbname=args.postgresql_database,
     ) as conn:
         with conn.cursor() as cur:
-            print(f"Deleting all with table {args.meta_table}")
+            logging.info(f"Deleting all with table {args.meta_table}")
             cur.execute(
                 f"DELETE FROM {args.postgresql_table} WHERE \"table_name\" = '{args.meta_table}'"
             )
 
-            print(f"Inserting meta fields with table {args.meta_table}")
+            logging.info(f"Inserting meta fields with table {args.meta_table}")
             cur.executemany(
                 f"""
                 INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable, subtype)
@@ -97,7 +97,7 @@ if __name__ == "__main__":
                 ],
             )
 
-            print(f"Inserting integer fields with table {args.meta_table}")
+            logging.info(f"Inserting integer fields with table {args.meta_table}")
             cur.executemany(
                 f"""
                 INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
@@ -109,7 +109,7 @@ if __name__ == "__main__":
                 ],
             )
 
-            print(f"Inserting float fields with table {args.meta_table}")
+            logging.info(f"Inserting float fields with table {args.meta_table}")
             cur.executemany(
                 f"""
                 INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
@@ -121,7 +121,7 @@ if __name__ == "__main__":
                 ],
             )
 
-            print(f"Inserting string fields with table {args.meta_table}")
+            logging.info(f"Inserting string fields with table {args.meta_table}")
             cur.executemany(
                 f"""
                 INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
@@ -133,7 +133,7 @@ if __name__ == "__main__":
                 ],
             )
 
-            print(f"Inserting word fields with table {args.meta_table}")
+            logging.info(f"Inserting word fields with table {args.meta_table}")
             cur.executemany(
                 f"""
                 INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
@@ -145,7 +145,7 @@ if __name__ == "__main__":
                 ],
             )
 
-            print(f"Inserting text fields with table {args.meta_table}")
+            logging.info(f"Inserting text fields with table {args.meta_table}")
             cur.executemany(
                 f"""
                 INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)
@@ -157,7 +157,7 @@ if __name__ == "__main__":
                 ],
             )
 
-            print(f"Inserting name fields with table {args.meta_table}")
+            logging.info(f"Inserting name fields with table {args.meta_table}")
             cur.executemany(
                 f"""
                 INSERT INTO {args.postgresql_table} ("table_name", name, type, nullable)

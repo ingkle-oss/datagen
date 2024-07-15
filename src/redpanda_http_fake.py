@@ -188,7 +188,7 @@ if __name__ == "__main__":
         ):
             raise ValueError("postgresql options are not enough for store")
 
-        print("Using faker from PostgreSQL store DB...")
+        logging.info("Using faker from PostgreSQL store DB...")
         fake = NZFakerStore(
             host=args.postgresql_host,
             port=args.postgresql_port,
@@ -215,7 +215,7 @@ if __name__ == "__main__":
         ):
             raise ValueError("postgresql options are not enough for edge data specs")
 
-        print("Using faker from PostgreSQL edge DB...")
+        logging.info("Using faker from PostgreSQL edge DB...")
         fake = NZFakerEdge(
             host=args.postgresql_host,
             port=args.postgresql_port,
@@ -227,7 +227,7 @@ if __name__ == "__main__":
             loglevel=args.loglevel,
         )
     else:
-        print("Using faker from parameters...")
+        logging.info("Using faker from parameters...")
         fake = NZFaker(
             bool_count=args.field_bool_count,
             int_count=args.field_int_count,
