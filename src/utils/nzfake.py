@@ -3,6 +3,7 @@ import logging
 import random
 import string
 import struct
+from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
 from faker import Faker
@@ -95,7 +96,21 @@ def _datatype_to_value(
     return value
 
 
-class NZFaker:
+class NZFakerBase(ABC):
+    @abstractmethod
+    def get_schema(self) -> list[dict[str, any]]:
+        pass
+
+    @abstractmethod
+    def update_schema(self):
+        pass
+
+    @abstractmethod
+    def values(self) -> dict[str, any]:
+        pass
+
+
+class NZFaker(NZFakerBase):
     fake = None
     fields = []
     str_choice: list[str]
@@ -151,6 +166,12 @@ class NZFaker:
                 self.fake.unique.pystr(max_chars=str_length)
                 for _ in range(str_cardinality)
             ]
+
+    def get_schema(self) -> list[dict[str, any]]:
+        return self.fields
+
+    def update_schema(self):
+        return super().update_schema()
 
     def values(self):
         values = (
@@ -224,7 +245,7 @@ def field_model(tablename):
     return Field
 
 
-class NZFakerStore:
+class NZFakerStore(NZFakerBase):
     engine = None
     Field = None
     fake = None
@@ -232,22 +253,6 @@ class NZFakerStore:
     str_choice: list[str]
     str_length: int
     str_cardinality: int
-
-    def update_schema(self):
-        with Session(self.engine, expire_on_commit=False) as session:
-            self.fields = sorted(
-                [
-                    {"name": s.name, "type": s.type, "subtype": s.subtype}
-                    for s in session.scalars(
-                        select(self.Field).where(
-                            self.Field.table_name == self.table_name
-                        )
-                    ).all()
-                ],
-                key=lambda x: x["name"],
-            )
-            logging.info(f"Produced fields length: {len(self.fields)}")
-            logging.info(self.fields)
 
     def __init__(
         self,
@@ -283,6 +288,26 @@ class NZFakerStore:
                 self.fake.unique.pystr(max_chars=str_length)
                 for _ in range(str_cardinality)
             ]
+
+    def get_schema(self) -> list[dict[str, any]]:
+        return self.fields
+
+    def update_schema(self):
+        with Session(self.engine, expire_on_commit=False) as session:
+            logging.info("Updating schema...")
+            self.fields = sorted(
+                [
+                    {"name": s.name, "type": s.type, "subtype": s.subtype}
+                    for s in session.scalars(
+                        select(self.Field).where(
+                            self.Field.table_name == self.table_name
+                        )
+                    ).all()
+                ],
+                key=lambda x: x["name"],
+            )
+            logging.info("Schema length: %d", len(self.fields))
+            logging.info("Schema: %s", self.fields)
 
     def values(self) -> dict[str, any]:
         values = {}
@@ -356,7 +381,7 @@ def edgedataspec_model(tablename):
     return EdgeDataSpec
 
 
-class NZFakerEdge:
+class NZFakerEdge(NZFakerBase):
     engine = None
     EdgeDataSpec = None
     fake = None
@@ -364,31 +389,6 @@ class NZFakerEdge:
     str_choice: list[str]
     str_length: int
     str_cardinality: int
-
-    def update_schema(self):
-        with Session(self.engine, expire_on_commit=False) as session:
-            self.dataspecs = sorted(
-                [
-                    {
-                        "edgeDataSourceId": s.edgeDataSourceId,
-                        "edgeDataSpecId": s.edgeDataSpecId,
-                        "type": s.type,
-                        "format": s.format,
-                        "size": s.size,
-                        "index": s.index,
-                        "is_null": s.is_null,
-                        "bits": s.bits,
-                    }
-                    for s in session.scalars(
-                        select(self.EdgeDataSpec).where(
-                            self.EdgeDataSpec.edgeId == self.edge_id
-                        )
-                    ).all()
-                ],
-                key=lambda x: (x["edgeDataSourceId"], x["index"]),
-            )
-            logging.info(f"Produced fields length: {len(self.dataspecs)}")
-            logging.info(self.dataspecs)
 
     def __init__(
         self,
@@ -410,6 +410,35 @@ class NZFakerEdge:
         self.EdgeDataSpec = edgedataspec_model(table)
         self.edge_id = edge_id
         self.update_schema()
+
+    def get_schema(self) -> list[dict[str, any]]:
+        return self.dataspecs
+
+    def update_schema(self):
+        with Session(self.engine, expire_on_commit=False) as session:
+            logging.info("Updating schema...")
+            self.dataspecs = sorted(
+                [
+                    {
+                        "edgeDataSourceId": s.edgeDataSourceId,
+                        "edgeDataSpecId": s.edgeDataSpecId,
+                        "type": s.type,
+                        "format": s.format,
+                        "size": s.size,
+                        "index": s.index,
+                        "is_null": s.is_null,
+                        "bits": s.bits,
+                    }
+                    for s in session.scalars(
+                        select(self.EdgeDataSpec).where(
+                            self.EdgeDataSpec.edgeId == self.edge_id
+                        )
+                    ).all()
+                ],
+                key=lambda x: (x["edgeDataSourceId"], x["index"]),
+            )
+            logging.info("Schema length: %d", len(self.dataspecs))
+            logging.info("Schema: %s", self.dataspecs)
 
     @staticmethod
     def _dataspec_to_values(dataspec: dict) -> list[int]:
@@ -437,7 +466,7 @@ class NZFakerEdge:
             elif dataspec["format"] == "q":
                 bits = bits | (-(bits & 0x8000000000000000))
             else:
-                logging.error(f"Unsupported format ({dataspec['format']}) for bits")
+                logging.error("Unsupported format: %s for bits", dataspec["format"])
 
             values.append(bits)
         else:

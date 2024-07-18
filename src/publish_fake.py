@@ -89,12 +89,6 @@ if __name__ == "__main__":
         "--postgresql-database", help="PostgreSQL database", default="store"
     )
     parser.add_argument("--postgresql-table", help="PostgreSQL table", default=None)
-    parser.add_argument(
-        "--postgresql-update-interval",
-        help="PostgreSQL update interval in seconds",
-        type=int,
-        default=10,
-    )
 
     # 1. if use_postgresql_store is True, then use PostgreSQL store
     parser.add_argument(
@@ -171,6 +165,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rate", help="records / seconds (1~1000000)", type=int, default=1
     )
+    parser.add_argument(
+        "--schema-update-interval",
+        help="PostgreSQL update interval in seconds",
+        type=int,
+        default=30,
+    )
+
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
 
@@ -183,38 +184,6 @@ if __name__ == "__main__":
     for kv in args.key_vals:
         key, val = kv.split("=")
         key_vals[key] = val
-
-    mqttc = mqtt.Client(
-        client_id=args.mqtt_client_id,
-        userdata=args,
-        protocol=mqtt.MQTTv311,
-        transport=args.mqtt_transport,
-        clean_session=True,
-        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-    )
-    if args.mqtt_tls:
-        ssl_context = create_default_context()
-        mqttc.tls_set_context(create_default_context())
-        mqttc.tls_insecure_set(args.mqtt_tls_insecure)
-    mqttc.username_pw_set(args.mqtt_username, args.mqtt_password)
-    mqttc.max_inflight_messages_set(args.mqtt_max_messages)
-    mqttc.max_queued_messages_set(args.mqtt_max_queued_messages)
-    mqttc.reconnect_delay_set(1, 120)
-    mqttc.enable_logger()
-    mqttc.on_connect = on_connect
-    mqttc.on_disconnect = on_disconnect
-
-    def signal_handler(sig, frame):
-        logging.warning("Interrupted")
-        mqttc.loop_stop()
-        mqttc.disconnect()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    mqttc.connect(host=args.mqtt_host, port=args.mqtt_port)
-    mqttc.loop_start()
 
     if args.use_postgresql_store:
         if not all(
@@ -282,37 +251,75 @@ if __name__ == "__main__":
             str_cardinality=args.field_str_cardinality,
         )
 
+    if not fake.get_schema() and not key_vals:
+        logging.error("No schema found to be used")
+        exit(1)
+
+    mqttc = mqtt.Client(
+        client_id=args.mqtt_client_id,
+        userdata=args,
+        protocol=mqtt.MQTTv311,
+        transport=args.mqtt_transport,
+        clean_session=True,
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+    )
+    if args.mqtt_tls:
+        ssl_context = create_default_context()
+        mqttc.tls_set_context(create_default_context())
+        mqttc.tls_insecure_set(args.mqtt_tls_insecure)
+    mqttc.username_pw_set(args.mqtt_username, args.mqtt_password)
+    mqttc.max_inflight_messages_set(args.mqtt_max_messages)
+    mqttc.max_queued_messages_set(args.mqtt_max_queued_messages)
+    mqttc.reconnect_delay_set(1, 120)
+    mqttc.enable_logger()
+    mqttc.on_connect = on_connect
+    mqttc.on_disconnect = on_disconnect
+
+    def signal_handler(sig, frame):
+        logging.warning("Interrupted")
+        mqttc.loop_stop()
+        mqttc.disconnect()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    mqttc.connect(host=args.mqtt_host, port=args.mqtt_port)
+    mqttc.loop_start()
+
     try:
         prev = datetime.now(timezone.utc)
         while True:
             now = datetime.now(timezone.utc)
-            for idx in range(args.rate):
-                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
-                row = {
-                    "timestamp": int(epoch.timestamp() * 1e6),
-                    **key_vals,
-                    **fake.values(),
-                }
-
-                try:
-                    ret = mqttc.publish(
-                        topic=args.mqtt_topic,
-                        payload=encode(row, args.output_type),
-                        qos=args.mqtt_qos,
-                    )
-                    ret.wait_for_publish()
-                    logging.debug(row)
-                    logging.debug("Published mid: %s, return code: %s", ret.mid, ret.rc)
-                except RuntimeError as e:
-                    logging.error("RuntimeError: %s", e)
-
-            if (args.use_postgresql_store or args.use_postgresql_edge) and (
-                now - prev
-            ).total_seconds() > args.postgresql_update_interval:
-                logging.info("Updating fields from postgresql...")
+            if (now - prev).total_seconds() > args.schema_update_interval:
                 fake.update_schema()
                 prev = now
+
+            if not fake.get_schema() and not key_vals:
+                logging.warning("No schema found to be used")
+            else:
+                for idx in range(args.rate):
+                    epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+                    row = {
+                        "timestamp": int(epoch.timestamp() * 1e6),
+                        **key_vals,
+                        **fake.values(),
+                    }
+
+                    try:
+                        ret = mqttc.publish(
+                            topic=args.mqtt_topic,
+                            payload=encode(row, args.output_type),
+                            qos=args.mqtt_qos,
+                        )
+                        ret.wait_for_publish()
+                        logging.debug(row)
+                        logging.debug(
+                            "Published mid: %s, return code: %s", ret.mid, ret.rc
+                        )
+                    except RuntimeError as e:
+                        logging.error("RuntimeError: %s", e)
 
             wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
             wait = 0.0 if wait < 0 else wait

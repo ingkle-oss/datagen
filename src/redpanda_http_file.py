@@ -124,8 +124,8 @@ if __name__ == "__main__":
 
         with open(filepath, "r", encoding="utf-8") as f:
             if args.input_type == "csv":
-                header = f.readline()
-                header = header.strip().split(",")
+                line = f.readline()
+                headers = line.strip().split(",")
 
             body_start = f.tell()
 
@@ -135,30 +135,36 @@ if __name__ == "__main__":
                 for idx in range(args.rate):
                     epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
-                    value = f.readline()
-                    if not value:
+                    line = f.readline()
+                    if not line:
                         f.seek(body_start)
-                        value = f.readline()
+                        line = f.readline()
 
                     if args.input_type == "csv":
-                        value = value.strip().split(",")
-                        value = [float(v) if check_float(v) else v for v in value]
-                        value = dict(zip(header, value))
+                        values = [
+                            float(v) if check_float(v) else v
+                            for v in line.strip().split(",")
+                        ]
+                        values = dict(zip(headers, values))
                     else:
-                        value = json.loads(value)
+                        values = json.loads(line)
 
-                    value = {
+                    if not values and not key_vals:
+                        logging.debug("No values to be produced")
+                        continue
+
+                    row = {
                         "timestamp": int(epoch.timestamp() * 1e6),
                         **key_vals,
-                        **value,
+                        **values,
                     }
 
                     if args.kafka_key is None:
-                        record = dict(value=value, partition=args.kafka_partition)
+                        record = dict(value=row, partition=args.kafka_partition)
                     else:
                         record = dict(
                             key=args.kafka_key.encode("utf-8"),
-                            value=value,
+                            value=row,
                             partition=args.kafka_partition,
                         )
                     records.append(record)
@@ -183,47 +189,52 @@ if __name__ == "__main__":
                 time.sleep(wait)
             logging.info("Finished")
 
-    values = load_values(filepath, args.input_type)
-    val_idx = 0
-    while True:
-        now = datetime.now(timezone.utc)
-        records = []
-        for idx in range(args.rate):
-            epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+    else:
+        values = load_values(filepath, args.input_type)
+        if not values and not key_vals:
+            logging.warning("No values to be produced")
+            exit(0)
 
-            value = {
-                "timestamp": int(epoch.timestamp() * 1e6),
-                **key_vals,
-                **values[val_idx],
-            }
-            val_idx = (val_idx + 1) % len(values)
+        val_idx = 0
+        while True:
+            now = datetime.now(timezone.utc)
+            records = []
+            for idx in range(args.rate):
+                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
-            if args.kafka_key is None:
-                record = dict(value=value, partition=args.kafka_partition)
-            else:
-                record = dict(
-                    key=args.kafka_key.encode("utf-8"),
-                    value=value,
-                    partition=args.kafka_partition,
-                )
-            records.append(record)
+                row = {
+                    "timestamp": int(epoch.timestamp() * 1e6),
+                    **key_vals,
+                    **values[val_idx],
+                }
+                val_idx = (val_idx + 1) % len(values)
 
-        res = requests.post(
-            url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
-            data=encode({"records": records}, args.output_type),
-            headers={
-                "Content-Type": "application/vnd.kafka.json.v2+json",
-                "content-encoding": "gzip",
-            },
-            verify=args.redpanda_verify,
-        ).json()
-        logging.info(
-            f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
-        )
+                if args.kafka_key is None:
+                    record = dict(value=row, partition=args.kafka_partition)
+                else:
+                    record = dict(
+                        key=args.kafka_key.encode("utf-8"),
+                        value=row,
+                        partition=args.kafka_partition,
+                    )
+                records.append(record)
 
-        wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-        wait = 0.0 if wait < 0 else wait
-        logging.info("Waiting for %f seconds...", wait)
-        time.sleep(wait)
+            res = requests.post(
+                url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
+                data=encode({"records": records}, args.output_type),
+                headers={
+                    "Content-Type": "application/vnd.kafka.json.v2+json",
+                    "content-encoding": "gzip",
+                },
+                verify=args.redpanda_verify,
+            ).json()
+            logging.info(
+                f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
+            )
 
-    logging.info("Finished")
+            wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
+            wait = 0.0 if wait < 0 else wait
+            logging.info("Waiting for %f seconds...", wait)
+            time.sleep(wait)
+
+        logging.info("Finished")

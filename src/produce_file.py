@@ -224,8 +224,8 @@ if __name__ == "__main__":
 
         with open(filepath, "r", encoding="utf-8") as f:
             if args.input_type == "csv":
-                header = f.readline()
-                header = header.strip().split(",")
+                line = f.readline()
+                headers = line.strip().split(",")
 
             body_start = f.tell()
 
@@ -234,22 +234,28 @@ if __name__ == "__main__":
                 for idx in range(args.rate):
                     epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
-                    row = f.readline()
-                    if not row:
+                    line = f.readline()
+                    if not line:
                         f.seek(body_start)
-                        row = f.readline()
+                        line = f.readline()
 
                     if args.input_type == "csv":
-                        row = row.strip().split(",")
-                        row = [float(v) if check_float(v) else v for v in row]
-                        row = dict(zip(header, row))
+                        values = [
+                            float(v) if check_float(v) else v
+                            for v in line.strip().split(",")
+                        ]
+                        values = dict(zip(headers, values))
                     else:
-                        row = json.loads(row)
+                        values = json.loads(line)
+
+                    if not values and not key_vals:
+                        logging.debug("No values to be produced")
+                        continue
 
                     row = {
                         "timestamp": int(epoch.timestamp() * 1e6),
                         **key_vals,
-                        **row,
+                        **values,
                     }
 
                     producer.poll(0)
@@ -276,41 +282,45 @@ if __name__ == "__main__":
             producer.flush()
             logging.info("Finished")
         exit(0)
+    else:
+        values = load_values(filepath, args.input_type)
+        if not values and not key_vals:
+            logging.warning("No values to be produced")
+            exit(0)
 
-    values = load_values(filepath, args.input_type)
-    val_idx = 0
-    while True:
-        now = datetime.now(timezone.utc)
-        for idx in range(args.rate):
-            epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+        val_idx = 0
+        while True:
+            now = datetime.now(timezone.utc)
+            for idx in range(args.rate):
+                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
-            row = {
-                "timestamp": int(epoch.timestamp() * 1e6),
-                **key_vals,
-                **values[val_idx],
-            }
-            val_idx = (val_idx + 1) % len(values)
+                row = {
+                    "timestamp": int(epoch.timestamp() * 1e6),
+                    **key_vals,
+                    **values[val_idx],
+                }
+                val_idx = (val_idx + 1) % len(values)
 
-            producer.poll(0)
-            try:
-                producer.produce(
-                    args.kafka_topic,
-                    encode(row, args.output_type),
-                    args.kafka_key.encode("utf-8") if args.kafka_key else None,
-                    on_delivery=delivery_report,
-                )
-            except KafkaException as e:
-                logging.error("KafkaException: %s", e)
+                producer.poll(0)
+                try:
+                    producer.produce(
+                        args.kafka_topic,
+                        encode(row, args.output_type),
+                        args.kafka_key.encode("utf-8") if args.kafka_key else None,
+                        on_delivery=delivery_report,
+                    )
+                except KafkaException as e:
+                    logging.error("KafkaException: %s", e)
 
-            logging.debug("Produced: %s:%s", args.kafka_key, row)
+                logging.debug("Produced: %s:%s", args.kafka_key, row)
 
-        if args.flush:
-            producer.flush()
+            if args.flush:
+                producer.flush()
 
-        wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-        wait = 0.0 if wait < 0 else wait
-        logging.info("Waiting for %f seconds...", wait)
-        time.sleep(wait)
+            wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
+            wait = 0.0 if wait < 0 else wait
+            logging.info("Waiting for %f seconds...", wait)
+            time.sleep(wait)
 
-    producer.flush()
-    logging.info("Finished")
+        producer.flush()
+        logging.info("Finished")

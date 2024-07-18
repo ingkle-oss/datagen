@@ -75,12 +75,6 @@ if __name__ == "__main__":
         "--postgresql-database", help="PostgreSQL database", default="store"
     )
     parser.add_argument("--postgresql-table", help="PostgreSQL table", default="fields")
-    parser.add_argument(
-        "--postgresql-update-interval",
-        help="PostgreSQL update interval in seconds",
-        type=int,
-        default=10,
-    )
 
     # 1. if use_postgresql_store is True, then use PostgreSQL store
     parser.add_argument(
@@ -157,6 +151,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rate", help="records / seconds (1~1000000)", type=int, default=1
     )
+    parser.add_argument(
+        "--schema-update-interval",
+        help="PostgreSQL update interval in seconds",
+        type=int,
+        default=30,
+    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -165,9 +165,6 @@ if __name__ == "__main__":
         level=args.loglevel,
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
-
-    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-    scheme = "https" if args.redpanda_ssl else "http"
 
     key_vals = {}
     for kv in args.key_vals:
@@ -240,47 +237,60 @@ if __name__ == "__main__":
             str_cardinality=args.field_str_cardinality,
         )
 
+    if not fake.get_schema() and not key_vals:
+        logging.error("No schema found to be used")
+        exit(1)
+
+    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+    scheme = "https" if args.redpanda_ssl else "http"
+
     prev = datetime.now(timezone.utc)
     while True:
         now = datetime.now(timezone.utc)
-        records = []
-        for idx in range(args.rate):
-            epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
-            value = {
-                "timestamp": int(epoch.timestamp() * 1e6),
-                **key_vals,
-                **fake.values(),
-            }
-
-            if args.kafka_key is None:
-                record = dict(value=value, partition=args.kafka_partition)
-            else:
-                record = dict(
-                    key=args.kafka_key.encode("utf-8"),
-                    value=value,
-                    partition=args.kafka_partition,
-                )
-
-            records.append(record)
-
-        res = requests.post(
-            url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
-            data=encode({"records": records}, args.output_type),
-            headers={"Content-Type": "application/vnd.kafka.json.v2+json"},
-            verify=args.redpanda_verify,
-        ).json()
-        logging.debug(encode({"records": records}, args.output_type))
-        logging.info(
-            f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
-        )
-
-        if (args.use_postgresql_store or args.use_postgresql_edge) and (
-            now - prev
-        ).total_seconds() > args.postgresql_update_interval:
-            logging.info("Updating fields from postgresql...")
+        if (now - prev).total_seconds() > args.schema_update_interval:
             fake.update_schema()
             prev = now
+
+        if not fake.get_schema() and not key_vals:
+            logging.warning("No schema found to be used")
+        else:
+            records = []
+            for idx in range(args.rate):
+                values = fake.values()
+                if not values and not key_vals:
+                    logging.debug("No values to be produced")
+                    continue
+
+                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+
+                value = {
+                    "timestamp": int(epoch.timestamp() * 1e6),
+                    **key_vals,
+                    **fake.values(),
+                }
+
+                if args.kafka_key is None:
+                    record = dict(value=value, partition=args.kafka_partition)
+                else:
+                    record = dict(
+                        key=args.kafka_key.encode("utf-8"),
+                        value=value,
+                        partition=args.kafka_partition,
+                    )
+
+                records.append(record)
+
+            res = requests.post(
+                url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
+                data=encode({"records": records}, args.output_type),
+                headers={"Content-Type": "application/vnd.kafka.json.v2+json"},
+                verify=args.redpanda_verify,
+            ).json()
+            logging.debug(encode({"records": records}, args.output_type))
+            logging.info(
+                f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
+            )
 
         wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
         wait = 0.0 if wait < 0 else wait

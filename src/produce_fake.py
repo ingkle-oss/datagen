@@ -98,12 +98,6 @@ if __name__ == "__main__":
         "--postgresql-database", help="PostgreSQL database", default="store"
     )
     parser.add_argument("--postgresql-table", help="PostgreSQL table", default=None)
-    parser.add_argument(
-        "--postgresql-update-interval",
-        help="PostgreSQL update interval in seconds",
-        type=int,
-        default=10,
-    )
 
     # 1. if use_postgresql_store is True, then use PostgreSQL store
     parser.add_argument(
@@ -183,6 +177,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--report-interval", help="Delivery report interval", type=int, default=10
     )
+    parser.add_argument(
+        "--schema-update-interval",
+        help="PostgreSQL update interval in seconds",
+        type=int,
+        default=30,
+    )
 
     parser.add_argument(
         "--flush",
@@ -203,75 +203,6 @@ if __name__ == "__main__":
     for kv in args.key_vals:
         key, val = kv.split("=")
         key_vals[key] = val
-
-    # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
-    # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
-    configs = {
-        "auto.offset.reset": args.kafka_auto_offset_reset,
-        "bootstrap.servers": args.kafka_bootstrap_servers,
-        "security.protocol": args.kafka_security_protocol,
-        "compression.type": args.kafka_compression_type,
-        "delivery.timeout.ms": args.kafka_delivery_timeout_ms,
-        "linger.ms": args.kafka_linger_ms,
-        "batch.size": args.kafka_batch_size,
-        "batch.num.messages": args.kafka_batch_num_messages,
-        "message.max.bytes": args.kafka_message_max_bytes,
-        "acks": args.kafka_acks,
-    }
-    if args.kafka_security_protocol.startswith("SASL"):
-        configs.update(
-            {
-                "sasl.mechanism": args.kafka_sasl_mechanism,
-                "sasl.username": args.kafka_sasl_username,
-                "sasl.password": args.kafka_sasl_password,
-            }
-        )
-    if args.kafka_security_protocol.endswith("SSL"):
-        # * Mac: brew install openssl
-        # * Ubuntu: sudo apt install ca-certificates
-        configs.update(
-            {
-                # ! https://github.com/confluentinc/confluent-kafka-python/issues/1610
-                "enable.ssl.certificate.verification": False,
-                "ssl.ca.location": args.kafka_ssl_ca_location,
-            }
-        )
-
-    producer = Producer(configs)
-    configs.pop("sasl.password", None)
-    logging.info("Producer created:")
-    logging.info(configs)
-
-    REPORT_COUNT = 0
-    PREV_OFFSET = {}
-
-    def delivery_report(err, msg):
-        global REPORT_COUNT
-        global PREV_OFFSET
-
-        if err is not None:
-            logging.warning(f"Message delivery failed: {err}")
-            return
-
-        REPORT_COUNT += 1
-        if REPORT_COUNT >= args.report_interval:
-            REPORT_COUNT = 0
-            partition = msg.partition()
-            offset = msg.offset()
-            logging.info(
-                "Message delivered to error=%s topic=%s partition=%s offset=%s (delta=%s) latency=%s",
-                msg.error(),
-                msg.topic(),
-                msg.partition(),
-                offset,
-                (
-                    (offset - PREV_OFFSET[f"{partition}"])
-                    if f"{partition}" in PREV_OFFSET and offset is not None
-                    else 0
-                ),
-                msg.latency(),
-            )
-            PREV_OFFSET[f"{partition}"] = offset
 
     if args.use_postgresql_store:
         if not all(
@@ -339,40 +270,113 @@ if __name__ == "__main__":
             str_cardinality=args.field_str_cardinality,
         )
 
+    if not fake.get_schema() and not key_vals:
+        logging.error("No schema found to be used")
+        exit(1)
+
+    REPORT_COUNT = 0
+    PREV_OFFSET = {}
+
+    def delivery_report(err, msg):
+        global REPORT_COUNT
+        global PREV_OFFSET
+
+        if err is not None:
+            logging.warning(f"Message delivery failed: {err}")
+            return
+
+        REPORT_COUNT += 1
+        if REPORT_COUNT >= args.report_interval:
+            REPORT_COUNT = 0
+            partition = msg.partition()
+            offset = msg.offset()
+            logging.info(
+                "Message delivered to error=%s topic=%s partition=%s offset=%s (delta=%s) latency=%s",
+                msg.error(),
+                msg.topic(),
+                msg.partition(),
+                offset,
+                (
+                    (offset - PREV_OFFSET[f"{partition}"])
+                    if f"{partition}" in PREV_OFFSET and offset is not None
+                    else 0
+                ),
+                msg.latency(),
+            )
+            PREV_OFFSET[f"{partition}"] = offset
+
+    # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
+    # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
+    configs = {
+        "auto.offset.reset": args.kafka_auto_offset_reset,
+        "bootstrap.servers": args.kafka_bootstrap_servers,
+        "security.protocol": args.kafka_security_protocol,
+        "compression.type": args.kafka_compression_type,
+        "delivery.timeout.ms": args.kafka_delivery_timeout_ms,
+        "linger.ms": args.kafka_linger_ms,
+        "batch.size": args.kafka_batch_size,
+        "batch.num.messages": args.kafka_batch_num_messages,
+        "message.max.bytes": args.kafka_message_max_bytes,
+        "acks": args.kafka_acks,
+    }
+    if args.kafka_security_protocol.startswith("SASL"):
+        configs.update(
+            {
+                "sasl.mechanism": args.kafka_sasl_mechanism,
+                "sasl.username": args.kafka_sasl_username,
+                "sasl.password": args.kafka_sasl_password,
+            }
+        )
+    if args.kafka_security_protocol.endswith("SSL"):
+        # * Mac: brew install openssl
+        # * Ubuntu: sudo apt install ca-certificates
+        configs.update(
+            {
+                # ! https://github.com/confluentinc/confluent-kafka-python/issues/1610
+                "enable.ssl.certificate.verification": False,
+                "ssl.ca.location": args.kafka_ssl_ca_location,
+            }
+        )
+
+    producer = Producer(configs)
+    configs.pop("sasl.password", None)
+    logging.info("Producer created:")
+    logging.info(configs)
+
     prev = datetime.now(timezone.utc)
     while True:
         now = datetime.now(timezone.utc)
-        for idx in range(args.rate):
-            epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
-            row = {
-                "timestamp": int(epoch.timestamp() * 1e6),  # microsecond
-                **key_vals,
-                **fake.values(),
-            }
-
-            producer.poll(0)
-            try:
-                producer.produce(
-                    args.kafka_topic,
-                    encode(row, args.output_type),
-                    args.kafka_key.encode("utf-8") if args.kafka_key else None,
-                    on_delivery=delivery_report,
-                )
-            except KafkaException as e:
-                logging.error("KafkaException: %s", e)
-
-            logging.debug("Produced: %s:%s", args.kafka_key, row)
-
-        if args.flush:
-            producer.flush()
-
-        if (args.use_postgresql_store or args.use_postgresql_edge) and (
-            now - prev
-        ).total_seconds() > args.postgresql_update_interval:
-            logging.info("Updating fields from postgresql...")
+        if (now - prev).total_seconds() > args.schema_update_interval:
             fake.update_schema()
             prev = now
+
+        if not fake.get_schema() and not key_vals:
+            logging.warning("No schema found to be used")
+        else:
+            for idx in range(args.rate):
+                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+                row = {
+                    "timestamp": int(epoch.timestamp() * 1e6),  # microsecond
+                    **key_vals,
+                    **fake.values(),
+                }
+
+                producer.poll(0)
+                try:
+                    producer.produce(
+                        args.kafka_topic,
+                        encode(row, args.output_type),
+                        args.kafka_key.encode("utf-8") if args.kafka_key else None,
+                        on_delivery=delivery_report,
+                    )
+                except KafkaException as e:
+                    logging.error("KafkaException: %s", e)
+
+                logging.debug("Produced: %s:%s", args.kafka_key, row)
+
+            if args.flush:
+                producer.flush()
 
         wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
         wait = 0.0 if wait < 0 else wait

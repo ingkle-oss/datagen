@@ -167,8 +167,8 @@ if __name__ == "__main__":
 
         with open(filepath, "r", encoding="utf-8") as f:
             if args.input_type == "csv":
-                header = f.readline()
-                header = header.strip().split(",")
+                line = f.readline()
+                headers = line.strip().split(",")
 
             body_start = f.tell()
 
@@ -180,22 +180,28 @@ if __name__ == "__main__":
                             microseconds=idx * (1000000 / args.rate)
                         )
 
-                        row = f.readline()
-                        if not row:
+                        line = f.readline()
+                        if not line:
                             f.seek(body_start)
-                            row = f.readline()
+                            line = f.readline()
 
                         if args.input_type == "csv":
-                            row = row.strip().split(",")
-                            row = [float(v) if check_float(v) else v for v in row]
-                            row = dict(zip(header, row))
+                            values = [
+                                float(v) if check_float(v) else v
+                                for v in line.strip().split(",")
+                            ]
+                            values = dict(zip(headers, values))
                         else:
-                            row = json.loads(row)
+                            values = json.loads(line)
+
+                        if not values and not key_vals:
+                            logging.debug("No values to be produced")
+                            continue
 
                         row = {
                             "timestamp": int(epoch.timestamp() * 1e6),
                             **key_vals,
-                            **row,
+                            **values,
                         }
 
                         try:
@@ -220,38 +226,45 @@ if __name__ == "__main__":
                 mqttc.loop_stop()
                 mqttc.disconnect()
                 logging.info("Finished")
-    values = load_values(filepath, args.input_type)
-    val_idx = 0
-    try:
-        while True:
-            now = datetime.now(timezone.utc)
-            for idx in range(args.rate):
-                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+    else:
+        values = load_values(filepath, args.input_type)
+        if not values and not key_vals:
+            logging.warning("No values to be produced")
+            exit(0)
 
-                row = {
-                    "timestamp": int(epoch.timestamp() * 1e6),
-                    **key_vals,
-                    **values[val_idx],
-                }
-                val_idx = (val_idx + 1) % len(values)
+        val_idx = 0
+        try:
+            while True:
+                now = datetime.now(timezone.utc)
+                for idx in range(args.rate):
+                    epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 
-                try:
-                    ret = mqttc.publish(
-                        topic=args.mqtt_topic,
-                        payload=encode(row, args.output_type),
-                        qos=args.mqtt_qos,
-                    )
-                    ret.wait_for_publish()
-                    logging.debug(row)
-                    logging.debug("Published mid: %s, return code: %s", ret.mid, ret.rc)
-                except RuntimeError as e:
-                    logging.error("RuntimeError: %s", e)
+                    row = {
+                        "timestamp": int(epoch.timestamp() * 1e6),
+                        **key_vals,
+                        **values[val_idx],
+                    }
+                    val_idx = (val_idx + 1) % len(values)
 
-            wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-            wait = 0.0 if wait < 0 else wait
-            logging.info("Waiting for %f seconds...", wait)
-            time.sleep(wait)
-    finally:
-        mqttc.loop_stop()
-        mqttc.disconnect()
-        logging.info("Finished")
+                    try:
+                        ret = mqttc.publish(
+                            topic=args.mqtt_topic,
+                            payload=encode(row, args.output_type),
+                            qos=args.mqtt_qos,
+                        )
+                        ret.wait_for_publish()
+                        logging.debug(row)
+                        logging.debug(
+                            "Published mid: %s, return code: %s", ret.mid, ret.rc
+                        )
+                    except RuntimeError as e:
+                        logging.error("RuntimeError: %s", e)
+
+                wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
+                wait = 0.0 if wait < 0 else wait
+                logging.info("Waiting for %f seconds...", wait)
+                time.sleep(wait)
+        finally:
+            mqttc.loop_stop()
+            mqttc.disconnect()
+            logging.info("Finished")
