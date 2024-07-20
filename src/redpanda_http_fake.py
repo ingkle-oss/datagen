@@ -237,10 +237,6 @@ if __name__ == "__main__":
             str_cardinality=args.field_str_cardinality,
         )
 
-    if not fake.get_schema() and not key_vals:
-        logging.error("No schema found to be used")
-        exit(1)
-
     requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
     scheme = "https" if args.redpanda_ssl else "http"
 

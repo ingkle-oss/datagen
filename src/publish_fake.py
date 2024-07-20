@@ -251,10 +251,6 @@ if __name__ == "__main__":
             str_cardinality=args.field_str_cardinality,
         )
 
-    if not fake.get_schema() and not key_vals:
-        logging.error("No schema found to be used")
-        exit(1)
-
     mqttc = mqtt.Client(
         client_id=args.mqtt_client_id,
         userdata=args,

@@ -270,10 +270,6 @@ if __name__ == "__main__":
             str_cardinality=args.field_str_cardinality,
         )
 
-    if not fake.get_schema() and not key_vals:
-        logging.error("No schema found to be used")
-        exit(1)
-
     REPORT_COUNT = 0
     PREV_OFFSET = {}
 
