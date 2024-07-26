@@ -135,27 +135,27 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--schema-update-interval",
+        help="PostgreSQL update interval in seconds",
+        type=int,
+        default=30,
+    )
+
+    # Output
+    parser.add_argument(
         "--output-type",
         help="Output message type",
         choices=["csv", "json", "bson"],
         default="json",
     )
-
     parser.add_argument(
         "--key-vals",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
     )
-
     parser.add_argument(
         "--rate", help="records / seconds (1~1000000)", type=int, default=1
-    )
-    parser.add_argument(
-        "--schema-update-interval",
-        help="PostgreSQL update interval in seconds",
-        type=int,
-        default=30,
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")

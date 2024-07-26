@@ -71,6 +71,7 @@ if __name__ == "__main__":
         default=65555,
     )
 
+    # File
     parser.add_argument(
         "--s3endpoint",
         help="S3 url",
@@ -92,6 +93,8 @@ if __name__ == "__main__":
         choices=["csv", "json", "bson"],
         default="json",
     )
+
+    # Output
     parser.add_argument(
         "--output-type",
         help="Output message type",
@@ -105,10 +108,10 @@ if __name__ == "__main__":
         nargs="*",
         default=[],
     )
-
     parser.add_argument(
         "--rate", help="records / seconds (1~1000000)", type=int, default=1
     )
+
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
 

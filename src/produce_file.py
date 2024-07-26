@@ -45,10 +45,8 @@ if __name__ == "__main__":
         help="Kafka auto offset reset (earliest/latest)",
         default="latest",
     )
-
     parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
     parser.add_argument("--kafka-key", help="Kafka partition key", default=None)
-
     parser.add_argument(
         "--kafka-compression-type",
         help="Kafka producer compression type",
@@ -79,7 +77,20 @@ if __name__ == "__main__":
         type=int,
         default=0,
     )
+    parser.add_argument(
+        "--kafka-flush",
+        help="Kafka flush after each produce (default: True)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--kafka-report-interval",
+        help="Kafka delivery report interval",
+        type=int,
+        default=10,
+    )
 
+    # File
     parser.add_argument(
         "--s3endpoint",
         help="S3 url",
@@ -101,32 +112,22 @@ if __name__ == "__main__":
         choices=["csv", "json", "bson"],
         default="json",
     )
+
+    # Output
     parser.add_argument(
         "--output-type",
         help="Output message type",
         choices=["csv", "json", "bson"],
         default="json",
     )
-
     parser.add_argument(
         "--key-vals",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
     )
-
     parser.add_argument(
         "--rate", help="records / seconds (1~1000000)", type=int, default=1
-    )
-    parser.add_argument(
-        "--report-interval", help="Delivery report interval", type=int, default=1
-    )
-
-    parser.add_argument(
-        "--flush",
-        help="Flush after each produce",
-        action=argparse.BooleanOptionalAction,
-        default=True,
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")

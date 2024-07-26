@@ -44,10 +44,8 @@ if __name__ == "__main__":
         help="Kafka auto offset reset (earliest/latest)",
         default="latest",
     )
-
     parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
     parser.add_argument("--kafka-key", help="Kafka partition key", default=None)
-
     parser.add_argument(
         "--kafka-compression-type",
         help="Kafka producer compression type",
@@ -55,21 +53,23 @@ if __name__ == "__main__":
         default="gzip",
     )
     parser.add_argument(
-        "--kafka-delivery-timeout-ms", help="delivery timeout in ms", default=30000
+        "--kafka-delivery-timeout-ms",
+        help="Kafka delivery timeout in ms",
+        default=30000,
     )
     parser.add_argument("--kafka-linger-ms", help="linger ms", default=1000)
     parser.add_argument(
         "--kafka-batch-size",
-        help="Maximum size of size (in bytes) of all messages batched in one MessageSet",
+        help="Kafka maximum size of size (in bytes) of all messages batched in one MessageSet",
         default=1000000,
     )
     parser.add_argument(
         "--kafka-batch-num-messages",
-        help="Maximum number of messages batched in one MessageSet",
+        help="Kafka maximum number of messages batched in one MessageSet",
         default=10000,
     )
     parser.add_argument(
-        "--kafka-message-max-bytes", help="message max bytes", default=1000000
+        "--kafka-message-max-bytes", help="Kafka message max bytes", default=1000000
     )
     parser.add_argument(
         "--kafka-acks",
@@ -77,6 +77,18 @@ if __name__ == "__main__":
         choices=[1, 0, -1],
         type=int,
         default=0,
+    )
+    parser.add_argument(
+        "--kafka-flush",
+        help="Kafka flush after each produce (default: True)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--kafka-report-interval",
+        help="Kafka delivery report interval",
+        type=int,
+        default=10,
     )
 
     # PostgreSQL
@@ -158,37 +170,27 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--output-type",
-        help="Output message type",
-        choices=["csv", "json", "bson"],
-        default="json",
-    )
-
-    parser.add_argument(
-        "--key-vals",
-        help="Custom key values (e.g. edge=test-edge)",
-        nargs="*",
-        default=[],
-    )
-
-    parser.add_argument(
-        "--rate", help="records / seconds (1~1000000)", type=int, default=1
-    )
-    parser.add_argument(
-        "--report-interval", help="Delivery report interval", type=int, default=10
-    )
-    parser.add_argument(
         "--schema-update-interval",
         help="PostgreSQL update interval in seconds",
         type=int,
         default=30,
     )
 
+    # Output
     parser.add_argument(
-        "--flush",
-        help="Flush after each produce (default: True)",
-        action=argparse.BooleanOptionalAction,
-        default=True,
+        "--output-type",
+        help="Output message type",
+        choices=["csv", "json", "bson"],
+        default="json",
+    )
+    parser.add_argument(
+        "--key-vals",
+        help="Custom key values (e.g. edge=test-edge)",
+        nargs="*",
+        default=[],
+    )
+    parser.add_argument(
+        "--rate", help="records / seconds (1~1000000)", type=int, default=1
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -353,7 +355,7 @@ if __name__ == "__main__":
             for idx in range(args.rate):
                 epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
                 row = {
-                    "timestamp": int(epoch.timestamp() * 1e6),  # microsecond
+                    "timestamp": int(epoch.timestamp() * 1e6),
                     **key_vals,
                     **fake.values(),
                 }
