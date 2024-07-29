@@ -373,7 +373,7 @@ if __name__ == "__main__":
 
                 logging.debug("Produced: %s:%s", args.kafka_key, row)
 
-            if args.flush:
+            if args.kafka_flush:
                 producer.flush()
 
         wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
