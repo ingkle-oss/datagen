@@ -96,6 +96,12 @@ if __name__ == "__main__":
         "--rate", help="records / seconds (1~1000000)", type=int, default=1
     )
 
+    parser.add_argument(
+        "--incremental-field",
+        help="Incremental field (int) from 0",
+        default=None,
+    )
+
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
 
@@ -117,6 +123,8 @@ if __name__ == "__main__":
         filepath = download_s3file(
             filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
         )
+
+    incremental_idx = 0
 
     # For bigfile, load file one by one
     if args.bigfile:
@@ -153,6 +161,10 @@ if __name__ == "__main__":
                     if not values and not key_vals:
                         logging.debug("No values to be produced")
                         continue
+
+                    if args.incremental_field:
+                        values[args.incremental_field] = incremental_idx
+                        incremental_idx += 1
 
                     row = {
                         "timestamp": int(epoch.timestamp() * 1e6),
@@ -202,6 +214,10 @@ if __name__ == "__main__":
             records = []
             for idx in range(args.rate):
                 epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+
+                if args.incremental_field:
+                    values[val_idx][args.incremental_field] = incremental_idx
+                    incremental_idx += 1
 
                 row = {
                     "timestamp": int(epoch.timestamp() * 1e6),

@@ -284,7 +284,7 @@ if __name__ == "__main__":
             return
 
         REPORT_COUNT += 1
-        if REPORT_COUNT >= args.report_interval:
+        if REPORT_COUNT >= args.kafka_report_interval:
             REPORT_COUNT = 0
             partition = msg.partition()
             offset = msg.offset()
