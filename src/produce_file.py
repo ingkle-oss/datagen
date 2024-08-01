@@ -135,6 +135,11 @@ if __name__ == "__main__":
         help="Incremental field (int) from 0",
         default=None,
     )
+    parser.add_argument(
+        "--unique-alt-field",
+        help="Use unique values for alternative field (float type)",
+        default=None,
+    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -225,6 +230,8 @@ if __name__ == "__main__":
         )
 
     incremental_idx = 0
+    unique_alt_prev_value = None
+    unique_alt_idx = -1
 
     # For bigfile, load file one by one
     if args.bigfile:
@@ -264,6 +271,14 @@ if __name__ == "__main__":
                     if args.incremental_field:
                         values[args.incremental_field] = incremental_idx
                         incremental_idx += 1
+
+                    if args.unique_alt_field:
+                        if (unique_alt_prev_value is None) or (
+                            unique_alt_prev_value != values[args.unique_alt_field]
+                        ):
+                            unique_alt_prev_value = values[args.unique_alt_field]
+                            unique_alt_idx += 1
+                        values[args.unique_alt_field] = unique_alt_idx
 
                     row = {
                         "timestamp": int(epoch.timestamp() * 1e6),
@@ -309,6 +324,14 @@ if __name__ == "__main__":
                 if args.incremental_field:
                     values[val_idx][args.incremental_field] = incremental_idx
                     incremental_idx += 1
+
+                if args.unique_alt_field:
+                    if (unique_alt_prev_value is None) or (
+                        unique_alt_prev_value != values[val_idx][args.unique_alt_field]
+                    ):
+                        unique_alt_prev_value = values[val_idx][args.unique_alt_field]
+                        unique_alt_idx += 1
+                    values[val_idx][args.unique_alt_field] = unique_alt_idx
 
                 row = {
                     "timestamp": int(epoch.timestamp() * 1e6),
