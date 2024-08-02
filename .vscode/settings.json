@@ -9,9 +9,6 @@
   "editor.formatOnPaste": true,
   "editor.formatOnSaveMode": "file",
   "editor.suggest.preview": true,
-  "editor.codeActionsOnSave": {
-    "source.organizeImports": "explicit"
-  },
   "[python]": {
     "editor.defaultFormatter": "ms-python.black-formatter",
     "editor.formatOnPaste": false
