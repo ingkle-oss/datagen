@@ -14,6 +14,54 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
 from utils.utils import download_s3file, encode, load_values
 
+
+def create_record(
+    incremental_field: str,
+    unique_alt_field: str,
+    interval_field: str,
+    interval_divisor: float,
+    kafka_partition: str,
+    key: str | None,
+    epoch: datetime,
+    values: dict,
+) -> tuple[dict, float]:
+    global INCREMENTAL_IDX
+    global UNIQUE_ALT_PREV_VALUE
+    global UNIQUE_ALT_IDX
+
+    if incremental_field:
+        values[incremental_field] = INCREMENTAL_IDX
+        INCREMENTAL_IDX += 1
+
+    if unique_alt_field:
+        if (UNIQUE_ALT_PREV_VALUE is None) or (
+            UNIQUE_ALT_PREV_VALUE != values[unique_alt_field]
+        ):
+            UNIQUE_ALT_PREV_VALUE = values[unique_alt_field]
+            UNIQUE_ALT_IDX += 1
+        values[unique_alt_field] = UNIQUE_ALT_IDX
+
+    wait = None
+    if interval_field and interval_field in values:
+        wait = values[interval_field] / interval_divisor
+
+    row = {
+        "timestamp": int(epoch.timestamp() * 1e6),
+        **key_vals,
+        **values,
+    }
+
+    if key is None:
+        record = dict(value=row, partition=kafka_partition)
+    else:
+        record = dict(
+            key=key.encode("utf-8"),
+            value=row,
+            partition=kafka_partition,
+        )
+    return record, wait
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -106,6 +154,13 @@ if __name__ == "__main__":
         help="Use unique values for alternative field (float type)",
         default=None,
     )
+    parser.add_argument("--interval-field", help="Interval field (float)", default=None)
+    parser.add_argument(
+        "--interval-field-unit",
+        help="Interval field unit",
+        choices=["second", "microsecond", "millisecond", "nanosecond"],
+        default=None,
+    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -129,9 +184,27 @@ if __name__ == "__main__":
             filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
         )
 
-    incremental_idx = 0
-    unique_alt_prev_value = None
-    unique_alt_idx = -1
+    loop = args.rate
+    divisor = 1.0
+    if args.interval_field:
+        if args.interval_field_unit == "second":
+            pass
+        elif args.interval_field_unit == "millisecond":
+            divisor = 1e3
+        elif args.interval_field_unit == "microsecond":
+            divisor = 1e6
+        elif args.interval_field_unit == "nanosecond":
+            divisor = 1e9
+        else:
+            raise RuntimeError(
+                "Invalid interval field unit: %s" % args.interval_field_unit
+            )
+        logging.info("Ignores --rate option...")
+        loop = 1
+
+    INCREMENTAL_IDX = 0
+    UNIQUE_ALT_PREV_VALUE = None
+    UNIQUE_ALT_IDX = -1
 
     # For bigfile, load file one by one
     if args.bigfile:
@@ -146,10 +219,11 @@ if __name__ == "__main__":
             body_start = f.tell()
 
             while True:
+                wait = None
                 now = datetime.now(timezone.utc)
                 records = []
-                for idx in range(args.rate):
-                    epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+                for idx in range(loop):
+                    epoch = now + timedelta(microseconds=idx * (1000000 / loop))
 
                     line = f.readline()
                     if not line:
@@ -169,36 +243,23 @@ if __name__ == "__main__":
                         logging.debug("No values to be produced")
                         continue
 
-                    if args.incremental_field:
-                        values[args.incremental_field] = incremental_idx
-                        incremental_idx += 1
-
-                    if args.unique_alt_field:
-                        if (unique_alt_prev_value is None) or (
-                            unique_alt_prev_value != values[args.unique_alt_field]
-                        ):
-                            unique_alt_prev_value = values[args.unique_alt_field]
-                            unique_alt_idx += 1
-                        values[args.unique_alt_field] = unique_alt_idx
-
-                    row = {
-                        "timestamp": int(epoch.timestamp() * 1e6),
-                        **key_vals,
-                        **values,
-                    }
-
-                    if args.kafka_key is None:
-                        record = dict(value=row, partition=args.kafka_partition)
-                    else:
-                        record = dict(
-                            key=args.kafka_key.encode("utf-8"),
-                            value=row,
-                            partition=args.kafka_partition,
-                        )
+                    record, wait = create_record(
+                        args.incremental_field,
+                        args.unique_alt_field,
+                        args.interval_field,
+                        divisor,
+                        args.kafka_partition,
+                        args.kafka_key,
+                        epoch,
+                        values,
+                    )
                     records.append(record)
 
                 res = requests.post(
-                    url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
+                    url=(
+                        f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}"
+                        f"/topics/{args.kafka_topic}"
+                    ),
                     data=encode({"records": records}, args.output_type),
                     headers={
                         "Content-Type": "application/vnd.kafka.json.v2+json",
@@ -211,8 +272,10 @@ if __name__ == "__main__":
                     f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
                 )
 
-                wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-                wait = 0.0 if wait < 0 else wait
+                if wait is None:
+                    wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
+                    wait = 0.0 if wait < 0 else wait
+
                 logging.info("Waiting for %f seconds...", wait)
                 time.sleep(wait)
             logging.info("Finished")
@@ -225,42 +288,30 @@ if __name__ == "__main__":
 
         val_idx = 0
         while True:
+            wait = None
             now = datetime.now(timezone.utc)
             records = []
-            for idx in range(args.rate):
-                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+            for idx in range(loop):
+                epoch = now + timedelta(microseconds=idx * (1000000 / loop))
 
-                if args.incremental_field:
-                    values[val_idx][args.incremental_field] = incremental_idx
-                    incremental_idx += 1
-
-                if args.unique_alt_field:
-                    if (unique_alt_prev_value is None) or (
-                        unique_alt_prev_value != values[val_idx][args.unique_alt_field]
-                    ):
-                        unique_alt_prev_value = values[val_idx][args.unique_alt_field]
-                        unique_alt_idx += 1
-                    values[val_idx][args.unique_alt_field] = unique_alt_idx
-
-                row = {
-                    "timestamp": int(epoch.timestamp() * 1e6),
-                    **key_vals,
-                    **values[val_idx],
-                }
+                record, wait = create_record(
+                    args.incremental_field,
+                    args.unique_alt_field,
+                    args.interval_field,
+                    divisor,
+                    args.kafka_partition,
+                    args.kafka_key,
+                    epoch,
+                    values[val_idx],
+                )
+                records.append(record)
                 val_idx = (val_idx + 1) % len(values)
 
-                if args.kafka_key is None:
-                    record = dict(value=row, partition=args.kafka_partition)
-                else:
-                    record = dict(
-                        key=args.kafka_key.encode("utf-8"),
-                        value=row,
-                        partition=args.kafka_partition,
-                    )
-                records.append(record)
-
             res = requests.post(
-                url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
+                url=(
+                    f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}"
+                    f"/topics/{args.kafka_topic}"
+                ),
                 data=encode({"records": records}, args.output_type),
                 headers={
                     "Content-Type": "application/vnd.kafka.json.v2+json",
@@ -272,8 +323,10 @@ if __name__ == "__main__":
                 f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
             )
 
-            wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-            wait = 0.0 if wait < 0 else wait
+            if wait is None:
+                wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
+                wait = 0.0 if wait < 0 else wait
+
             logging.info("Waiting for %f seconds...", wait)
             time.sleep(wait)
 

@@ -30,6 +30,65 @@ def on_disconnect(client: mqtt.Client, userdata, flags, rc, properties):
     client.loop_stop()
 
 
+INCREMENTAL_IDX = 0
+UNIQUE_ALT_PREV_VALUE = None
+UNIQUE_ALT_IDX = -1
+
+
+def publish(
+    mqttc: mqtt.Client,
+    output_type: str,
+    incremental_field: str,
+    unique_alt_field: str,
+    interval_field: str,
+    interval_divisor: float,
+    topic: str,
+    qos: int,
+    key: str,
+    epoch: datetime,
+    values: dict,
+) -> float:
+    global INCREMENTAL_IDX
+    global UNIQUE_ALT_PREV_VALUE
+    global UNIQUE_ALT_IDX
+
+    if incremental_field:
+        values[incremental_field] = INCREMENTAL_IDX
+        INCREMENTAL_IDX += 1
+
+    if unique_alt_field:
+        if (UNIQUE_ALT_PREV_VALUE is None) or (
+            UNIQUE_ALT_PREV_VALUE != values[unique_alt_field]
+        ):
+            UNIQUE_ALT_PREV_VALUE = values[unique_alt_field]
+            UNIQUE_ALT_IDX += 1
+        values[unique_alt_field] = UNIQUE_ALT_IDX
+
+    wait = None
+    if interval_field and interval_field in values:
+        wait = values[interval_field] / interval_divisor
+
+    row = {
+        "timestamp": int(epoch.timestamp() * 1e6),
+        **key_vals,
+        **values,
+    }
+
+    try:
+        ret = mqttc.publish(
+            topic=topic,
+            payload=encode(row, output_type),
+            qos=qos,
+        )
+        ret.wait_for_publish()
+        logging.debug(row)
+        logging.debug("Published mid: %s, return code: %s", ret.mid, ret.rc)
+    except RuntimeError as e:
+        logging.error("RuntimeError: %s", e)
+
+    return wait
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -119,7 +178,14 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--unique-alt-field",
-        help="Use unique values for alternative field (float type)",
+        help="Alternative field (float type) for unique values",
+        default=None,
+    )
+    parser.add_argument("--interval-field", help="Interval field (float)", default=None)
+    parser.add_argument(
+        "--interval-field-unit",
+        help="Interval field unit",
+        choices=["second", "microsecond", "millisecond", "nanosecond"],
         default=None,
     )
 
@@ -174,9 +240,27 @@ if __name__ == "__main__":
             filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
         )
 
-    incremental_idx = 0
-    unique_alt_prev_value = None
-    unique_alt_idx = 0
+    INCREMENTAL_IDX = 0
+    UNIQUE_ALT_PREV_VALUE = None
+    UNIQUE_ALT_IDX = 0
+
+    loop = args.rate
+    divisor = 1.0
+    if args.interval_field:
+        if args.interval_field_unit == "second":
+            pass
+        elif args.interval_field_unit == "millisecond":
+            divisor = 1e3
+        elif args.interval_field_unit == "microsecond":
+            divisor = 1e6
+        elif args.interval_field_unit == "nanosecond":
+            divisor = 1e9
+        else:
+            raise RuntimeError(
+                "Invalid interval field unit: %s" % args.interval_field_unit
+            )
+        logging.info("Ignores --rate option...")
+        loop = 1
 
     # For bigfile, load file one by one
     if args.bigfile:
@@ -192,11 +276,10 @@ if __name__ == "__main__":
 
             try:
                 while True:
+                    wait = None
                     now = datetime.now(timezone.utc)
-                    for idx in range(args.rate):
-                        epoch = now + timedelta(
-                            microseconds=idx * (1000000 / args.rate)
-                        )
+                    for idx in range(loop):
+                        epoch = now + timedelta(microseconds=idx * (1000000 / loop))
 
                         line = f.readline()
                         if not line:
@@ -216,40 +299,24 @@ if __name__ == "__main__":
                             logging.debug("No values to be produced")
                             continue
 
-                        if args.incremental_field:
-                            values[args.incremental_field] = incremental_idx
-                            incremental_idx += 1
+                        wait = publish(
+                            mqttc,
+                            args.output_type,
+                            args.incremental_field,
+                            args.unique_alt_field,
+                            args.interval_field,
+                            divisor,
+                            args.mqtt_topic,
+                            args.mqtt_qos,
+                            key_vals,
+                            epoch,
+                            values,
+                        )
 
-                        if args.unique_alt_field:
-                            if (unique_alt_prev_value is None) or (
-                                unique_alt_prev_value != values[args.unique_alt_field]
-                            ):
-                                unique_alt_prev_value = values[args.unique_alt_field]
-                                unique_alt_idx += 1
-                            values[args.unique_alt_field] = unique_alt_idx
+                    if wait is None:
+                        wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
+                        wait = 0.0 if wait < 0 else wait
 
-                        row = {
-                            "timestamp": int(epoch.timestamp() * 1e6),
-                            **key_vals,
-                            **values,
-                        }
-
-                        try:
-                            ret = mqttc.publish(
-                                topic=args.mqtt_topic,
-                                payload=encode(row, args.output_type),
-                                qos=args.mqtt_qos,
-                            )
-                            ret.wait_for_publish()
-                            logging.debug(row)
-                            logging.debug(
-                                "Published mid: %s, return code: %s", ret.mid, ret.rc
-                            )
-                        except RuntimeError as e:
-                            logging.error("RuntimeError: %s", e)
-
-                    wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-                    wait = 0.0 if wait < 0 else wait
                     logging.info("Waiting for %f seconds...", wait)
                     time.sleep(wait)
             finally:
@@ -266,47 +333,28 @@ if __name__ == "__main__":
         try:
             while True:
                 now = datetime.now(timezone.utc)
-                for idx in range(args.rate):
-                    epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+                for idx in range(loop):
+                    epoch = now + timedelta(microseconds=idx * (1000000 / loop))
 
-                    if args.incremental_field:
-                        values[val_idx][args.incremental_field] = incremental_idx
-                        incremental_idx += 1
-
-                    if args.unique_alt_field:
-                        if (unique_alt_prev_value is None) or (
-                            unique_alt_prev_value
-                            != values[val_idx][args.unique_alt_field]
-                        ):
-                            unique_alt_prev_value = values[val_idx][
-                                args.unique_alt_field
-                            ]
-                            unique_alt_idx += 1
-                        values[val_idx][args.unique_alt_field] = unique_alt_idx
-
-                    row = {
-                        "timestamp": int(epoch.timestamp() * 1e6),
-                        **key_vals,
-                        **values[val_idx],
-                    }
+                    wait = publish(
+                        mqttc,
+                        args.output_type,
+                        args.incremental_field,
+                        args.unique_alt_field,
+                        args.interval_field,
+                        divisor,
+                        args.mqtt_topic,
+                        args.mqtt_qos,
+                        key_vals,
+                        epoch,
+                        values[val_idx],
+                    )
                     val_idx = (val_idx + 1) % len(values)
 
-                    try:
-                        ret = mqttc.publish(
-                            topic=args.mqtt_topic,
-                            payload=encode(row, args.output_type),
-                            qos=args.mqtt_qos,
-                        )
-                        ret.wait_for_publish()
-                        logging.debug(row)
-                        logging.debug(
-                            "Published mid: %s, return code: %s", ret.mid, ret.rc
-                        )
-                    except RuntimeError as e:
-                        logging.error("RuntimeError: %s", e)
+                if wait is None:
+                    wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
+                    wait = 0.0 if wait < 0 else wait
 
-                wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-                wait = 0.0 if wait < 0 else wait
                 logging.info("Waiting for %f seconds...", wait)
                 time.sleep(wait)
         finally:
