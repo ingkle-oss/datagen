@@ -328,7 +328,7 @@ if __name__ == "__main__":
             while True:
                 wait = None
                 now = datetime.now(timezone.utc)
-                for idx in range(stop=loop):
+                for idx in range(loop):
                     epoch = now + timedelta(microseconds=idx * (1000000 / loop))
 
                     line = f.readline()
