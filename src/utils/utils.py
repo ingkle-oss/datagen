@@ -43,6 +43,7 @@ def load_values(filepath: str, filetype: str) -> list[dict] | list[str]:
 
 
 def download_s3file(filepath: str, s3accesskey: str, s3secretkey: str, s3endpoint: str):
+    logging.info("Downloading file %s from S3... %s", filepath, s3endpoint)
     tok = urlparse(filepath)
 
     src_bucket = tok.netloc

@@ -52,11 +52,13 @@ def publish(
     global UNIQUE_ALT_PREV_VALUE
     global UNIQUE_ALT_IDX
 
-    if incremental_field:
+    values = {k: v for k, v in values.items() if v}
+
+    if incremental_field and incremental_field in values:
         values[incremental_field] = INCREMENTAL_IDX
         INCREMENTAL_IDX += 1
 
-    if unique_alt_field:
+    if unique_alt_field and unique_alt_field in values:
         if (UNIQUE_ALT_PREV_VALUE is None) or (
             UNIQUE_ALT_PREV_VALUE != values[unique_alt_field]
         ):
