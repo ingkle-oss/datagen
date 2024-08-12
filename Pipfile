@@ -14,6 +14,8 @@ requests = "*"
 sqlalchemy = "*"
 psycopg2 = "*"
 paho-mqtt = "*"
+python-snappy = "*"
+zstandard = "*"
 
 [dev-packages]
 black = "*"
