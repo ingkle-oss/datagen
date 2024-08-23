@@ -209,6 +209,19 @@ if __name__ == "__main__":
         default=None,
     )
 
+    parser.add_argument(
+        "--timestamp-start",
+        help="timestamp start in epoch seconds",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--timestamp-diff",
+        help="timestamp difference in seconds",
+        type=float,
+        default=None,
+    )
+
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
 
@@ -216,6 +229,17 @@ if __name__ == "__main__":
         level=args.loglevel,
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
+
+    timestamp_enabled = False
+    if any([args.timestamp_start, args.timestamp_diff]):
+        if not all([args.timestamp_start, args.timestamp_diff]):
+            raise ValueError(
+                (
+                    "Some timestamp options are not enough, "
+                    f"timestamp-start: {args.timestamp_start}, timestamp-diff: {args.timestamp_diff}",
+                )
+            )
+        timestamp_enabled = True
 
     key_vals = {}
     for kv in args.key_vals:
@@ -291,15 +315,12 @@ if __name__ == "__main__":
             )
             PREV_OFFSET[f"{partition}"] = offset
 
-    filepath = args.filepath
-    if filepath.startswith("s3a://"):
-        filepath = download_s3file(
-            filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
-        )
-
     loop = args.rate
     divisor = 1.0
     if args.interval_field:
+        if timestamp_enabled:
+            raise RuntimeError("Cannot use timestamp options with interval field")
+
         if args.interval_field_unit == "second":
             pass
         elif args.interval_field_unit == "millisecond":
@@ -315,6 +336,12 @@ if __name__ == "__main__":
         logging.info("Ignores --rate option...")
         loop = 1
 
+    filepath = args.filepath
+    if filepath.startswith("s3a://"):
+        filepath = download_s3file(
+            filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
+        )
+
     # For bigfile, load file one by one
     if args.bigfile:
         if args.input_type == "bson":
@@ -327,11 +354,22 @@ if __name__ == "__main__":
 
             body_start = f.tell()
 
+            if timestamp_enabled:
+                timestamp_start = datetime.fromtimestamp(
+                    args.timestamp_start, timezone.utc
+                )
+
             while True:
                 wait = None
                 now = datetime.now(timezone.utc)
                 for idx in range(loop):
-                    epoch = now + timedelta(microseconds=idx * (1000000 / loop))
+                    if timestamp_enabled:
+                        epoch = timestamp_start
+                        timestamp_start += timedelta(
+                            microseconds=args.timestamp_diff * 1e6
+                        )
+                    else:
+                        epoch = now + timedelta(microseconds=idx * (1000000 / loop))
 
                     line = f.readline()
                     if not line:
@@ -382,12 +420,19 @@ if __name__ == "__main__":
             logging.warning("No values to be produced")
             exit(0)
 
+        if timestamp_enabled:
+            timestamp_start = datetime.fromtimestamp(args.timestamp_start, timezone.utc)
+
         val_idx = 0
         while True:
             wait = None
             now = datetime.now(timezone.utc)
             for idx in range(loop):
-                epoch = now + timedelta(microseconds=idx * (1000000 / loop))
+                if timestamp_enabled:
+                    epoch = timestamp_start
+                    timestamp_start += timedelta(microseconds=args.timestamp_diff * 1e6)
+                else:
+                    epoch = now + timedelta(microseconds=idx * (1000000 / loop))
 
                 wait = produce(
                     producer,

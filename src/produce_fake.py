@@ -192,6 +192,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rate", help="records / seconds (1~1000000)", type=int, default=1
     )
+    parser.add_argument(
+        "--timestamp-start",
+        help="timestamp start in epoch seconds",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--timestamp-diff",
+        help="timestamp difference in seconds",
+        type=float,
+        default=None,
+    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -200,6 +212,17 @@ if __name__ == "__main__":
         level=args.loglevel,
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
+
+    timestamp_enabled = False
+    if any([args.timestamp_start, args.timestamp_diff]):
+        if not all([args.timestamp_start, args.timestamp_diff]):
+            raise ValueError(
+                (
+                    "Some timestamp options are not enough, "
+                    f"timestamp-start: {args.timestamp_start}, timestamp-diff: {args.timestamp_diff}",
+                )
+            )
+        timestamp_enabled = True
 
     key_vals = {}
     for kv in args.key_vals:
@@ -341,6 +364,9 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
+    if timestamp_enabled:
+        timestamp_start = datetime.fromtimestamp(args.timestamp_start, timezone.utc)
+
     prev = datetime.now(timezone.utc)
     while True:
         now = datetime.now(timezone.utc)
@@ -353,7 +379,12 @@ if __name__ == "__main__":
             logging.warning("No schema found to be used")
         else:
             for idx in range(args.rate):
-                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+                if timestamp_enabled:
+                    epoch = timestamp_start
+                    timestamp_start += timedelta(microseconds=args.timestamp_diff * 1e6)
+                else:
+                    epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+
                 row = {
                     "timestamp": int(epoch.timestamp() * 1e6),
                     **key_vals,
