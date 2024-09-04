@@ -190,7 +190,13 @@ if __name__ == "__main__":
         default=[],
     )
     parser.add_argument(
-        "--rate", help="records / seconds (1~1000000)", type=int, default=1
+        "--rate", help="Number of records in a group", type=int, default=1
+    )
+    parser.add_argument(
+        "--rate-interval",
+        help="Interval in seconds between groups",
+        type=float,
+        default=None,
     )
     parser.add_argument(
         "--timestamp-start",
@@ -407,10 +413,13 @@ if __name__ == "__main__":
             if args.kafka_flush:
                 producer.flush()
 
-        wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-        wait = 0.0 if wait < 0 else wait
-        logging.info("Waiting for %f seconds...", wait)
-        time.sleep(wait)
+        if args.rate_interval:
+            wait = (
+                args.rate_interval - (datetime.now(timezone.utc) - now).total_seconds()
+            )
+            wait = 0.0 if wait < 0 else wait
+            logging.info("Waiting for %f seconds...", wait)
+            time.sleep(wait)
 
     producer.flush()
     logging.info("Finished")

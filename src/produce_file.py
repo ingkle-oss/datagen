@@ -3,6 +3,7 @@
 # https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html#producer
 # https://github.com/confluentinc/confluent-kafka-python/tree/master/examples
 
+
 import argparse
 import json
 import logging
@@ -188,7 +189,13 @@ if __name__ == "__main__":
         default=[],
     )
     parser.add_argument(
-        "--rate", help="records / seconds (1~1000000)", type=int, default=1
+        "--rate", help="Number of records in a group", type=int, default=1
+    )
+    parser.add_argument(
+        "--rate-interval",
+        help="Interval in seconds between groups",
+        type=float,
+        default=None,
     )
 
     parser.add_argument(
@@ -201,7 +208,9 @@ if __name__ == "__main__":
         help="Use unique values for alternative field (float type)",
         default=None,
     )
-    parser.add_argument("--interval-field", help="Interval field (float)", default=None)
+    parser.add_argument(
+        "--interval-field", help="Interval field (float) between records", default=None
+    )
     parser.add_argument(
         "--interval-field-unit",
         help="Interval field unit",
@@ -315,7 +324,7 @@ if __name__ == "__main__":
             )
             PREV_OFFSET[f"{partition}"] = offset
 
-    loop = args.rate
+    rate = args.rate
     divisor = 1.0
     if args.interval_field:
         if timestamp_enabled:
@@ -333,8 +342,8 @@ if __name__ == "__main__":
             raise RuntimeError(
                 "Invalid interval field unit: %s" % args.interval_field_unit
             )
-        logging.info("Ignores --rate option...")
-        loop = 1
+        logging.info("Ignores --rate and --rate-interval options...")
+        rate = 1
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):
@@ -362,14 +371,14 @@ if __name__ == "__main__":
             while True:
                 wait = None
                 now = datetime.now(timezone.utc)
-                for idx in range(loop):
+                for idx in range(rate):
                     if timestamp_enabled:
                         epoch = timestamp_start
                         timestamp_start += timedelta(
                             microseconds=args.timestamp_diff * 1e6
                         )
                     else:
-                        epoch = now + timedelta(microseconds=idx * (1000000 / loop))
+                        epoch = now + timedelta(microseconds=idx * (1000000 / rate))
 
                     line = f.readline()
                     if not line:
@@ -405,15 +414,16 @@ if __name__ == "__main__":
                 if args.kafka_flush:
                     producer.flush()
 
-                if wait is None:
-                    wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-                    wait = 0.0 if wait < 0 else wait
+                if wait or args.rate_interval:
+                    if args.rate_interval:
+                        wait = (
+                            args.rate_interval
+                            - (datetime.now(timezone.utc) - now).total_seconds()
+                        )
+                        wait = 0.0 if wait < 0 else wait
 
-                logging.info("Waiting for %f seconds...", wait)
-                time.sleep(wait)
-
-            producer.flush()
-            logging.info("Finished")
+                    logging.info("Waiting for %f seconds...", wait)
+                    time.sleep(wait)
     else:
         values = load_values(filepath, args.input_type)
         if not values and not key_vals:
@@ -427,12 +437,12 @@ if __name__ == "__main__":
         while True:
             wait = None
             now = datetime.now(timezone.utc)
-            for idx in range(loop):
+            for idx in range(rate):
                 if timestamp_enabled:
                     epoch = timestamp_start
                     timestamp_start += timedelta(microseconds=args.timestamp_diff * 1e6)
                 else:
-                    epoch = now + timedelta(microseconds=idx * (1000000 / loop))
+                    epoch = now + timedelta(microseconds=idx * (1000000 / rate))
 
                 wait = produce(
                     producer,
@@ -451,12 +461,16 @@ if __name__ == "__main__":
             if args.kafka_flush:
                 producer.flush()
 
-            if wait is None:
-                wait = 1.0 - (datetime.now(timezone.utc) - now).total_seconds()
-                wait = 0.0 if wait < 0 else wait
+            if wait or args.rate_interval:
+                if args.rate_interval:
+                    wait = (
+                        args.rate_interval
+                        - (datetime.now(timezone.utc) - now).total_seconds()
+                    )
+                    wait = 0.0 if wait < 0 else wait
 
-            logging.info("Waiting for %f seconds...", wait)
-            time.sleep(wait)
+                logging.info("Waiting for %f seconds...", wait)
+                time.sleep(wait)
 
-        producer.flush()
-        logging.info("Finished")
+    producer.flush()
+    logging.info("Finished")
