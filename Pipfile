@@ -16,6 +16,9 @@ psycopg2 = "*"
 paho-mqtt = "*"
 python-snappy = "*"
 zstandard = "*"
+pandas = "*"
+fsspec = "*"
+s3fs = "==2024.6.1"
 
 [dev-packages]
 black = "*"
