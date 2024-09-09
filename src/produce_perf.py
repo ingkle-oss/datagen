@@ -206,11 +206,12 @@ if __name__ == "__main__":
     timestamp_start = datetime.fromtimestamp(args.timestamp_start, timezone.utc)
     rows = []
     for value in values:
+        now = datetime.now(timezone.utc)
         rows.append(
             {
                 "timestamp": int(timestamp_start.timestamp() * 1e6),
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "created_at": now,
+                "updated_at": now,
                 **key_vals,
                 **value,
             }
