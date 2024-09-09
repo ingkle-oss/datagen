@@ -204,38 +204,38 @@ if __name__ == "__main__":
         exit(0)
 
     timestamp_start = datetime.fromtimestamp(args.timestamp_start, timezone.utc)
-    rows = []
-    for value in values:
-        now = datetime.now(timezone.utc)
-        rows.append(
-            {
-                "timestamp": int(timestamp_start.timestamp() * 1e6),
-                "created_at": now,
-                "updated_at": now,
-                **key_vals,
-                **value,
-            }
-        )
-        timestamp_start += timedelta(microseconds=args.timestamp_diff * 1e6)
-
     total_elapsed = []
-    row_idx = 0
     for loop_idx in range(args.loop_max):
         now = datetime.now(timezone.utc)
 
+        val_idx = 0
+        rows = []
+        for _ in range(args.rate):
+            at = datetime.now(timezone.utc)
+            rows.append(
+                {
+                    "timestamp": int(timestamp_start.timestamp() * 1e6),
+                    "created_at": at,
+                    "updated_at": at,
+                    **key_vals,
+                    **values[val_idx],
+                }
+            )
+            val_idx = (val_idx + 1) % len(values)
+            timestamp_start += timedelta(microseconds=args.timestamp_diff * 1e6)
+
         start = perf_counter()
         producer.poll(0)
-        for idx in range(args.rate):
+        for row in rows:
             try:
                 producer.produce(
                     args.kafka_topic,
-                    encode(rows[row_idx], args.output_type),
+                    encode(row, args.output_type),
                     args.kafka_key.encode("utf-8") if args.kafka_key else None,
                 )
             except KafkaException as e:
                 logging.error("KafkaException: %s", e)
 
-            row_idx = (row_idx + 1) % len(values)
         producer.flush()
         elapsed = perf_counter() - start
         total_elapsed.append(elapsed)
