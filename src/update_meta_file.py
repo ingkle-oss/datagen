@@ -147,7 +147,7 @@ if __name__ == "__main__":
                     args.meta_table,
                     "EXTERNAL",
                     "DELTA",
-                    f"s3a://ingkle-com-ingkle/{args.meta_table}/ingest",
+                    f"s3://ingkle-com-ingkle/{args.meta_table}/ingest",
                     '["date"]',
                     "{}",
                     "30,d",
