@@ -31,6 +31,7 @@ def produce(
     key: str | None,
     epoch: datetime,
     values: dict,
+    partition: int = 0,
 ) -> float:
     global INCREMENTAL_IDX
     global UNIQUE_ALT_PREV_VALUE
@@ -63,9 +64,10 @@ def produce(
     producer.poll(0)
     try:
         producer.produce(
-            topic,
-            encode(row, output_type),
-            key.encode("utf-8") if key else None,
+            topic=topic,
+            value=encode(row, output_type),
+            key=key.encode("utf-8") if key else None,
+            partition=partition,
             on_delivery=delivery_report,
         )
     except KafkaException as e:
@@ -108,6 +110,9 @@ if __name__ == "__main__":
         default="latest",
     )
     parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
+    parser.add_argument(
+        "--kafka-partition", help="Kafka partition", type=int, default=0
+    )
     parser.add_argument("--kafka-key", help="Kafka partition key", default=None)
     parser.add_argument(
         "--kafka-compression-type",
@@ -409,6 +414,7 @@ if __name__ == "__main__":
                         args.kafka_key,
                         epoch,
                         values,
+                        args.kafka_partition,
                     )
 
                 if args.kafka_flush:
@@ -455,6 +461,7 @@ if __name__ == "__main__":
                     args.kafka_key,
                     epoch,
                     values[val_idx],
+                    args.kafka_partition,
                 )
                 val_idx = (val_idx + 1) % len(values)
 

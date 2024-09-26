@@ -46,6 +46,9 @@ if __name__ == "__main__":
         default="latest",
     )
     parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
+    parser.add_argument(
+        "--kafka-partition", help="Kafka partition", type=int, default=0
+    )
     parser.add_argument("--kafka-key", help="Kafka partition key", default=None)
     parser.add_argument(
         "--kafka-compression-type",
@@ -229,9 +232,10 @@ if __name__ == "__main__":
         for row in rows:
             try:
                 producer.produce(
-                    args.kafka_topic,
-                    encode(row, args.output_type),
-                    args.kafka_key.encode("utf-8") if args.kafka_key else None,
+                    topic=args.kafka_topic,
+                    value=encode(row, args.output_type),
+                    key=args.kafka_key.encode("utf-8") if args.kafka_key else None,
+                    partition=args.kafka_partition,
                 )
             except KafkaException as e:
                 logging.error("KafkaException: %s", e)
