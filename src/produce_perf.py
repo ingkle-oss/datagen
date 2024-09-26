@@ -203,12 +203,12 @@ if __name__ == "__main__":
         logging.warning("No values to be produced")
         exit(0)
 
+    val_idx = 0
     timestamp_start = datetime.fromtimestamp(args.timestamp_start, timezone.utc)
     total_elapsed = []
     for loop_idx in range(args.loop_max):
         now = datetime.now(timezone.utc)
 
-        val_idx = 0
         rows = []
         for _ in range(args.rate):
             at = datetime.now(timezone.utc)
