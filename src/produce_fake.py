@@ -145,13 +145,13 @@ if __name__ == "__main__":
         "--field-bool-count", help="Number of bool field", type=int, default=0
     )
     parser.add_argument(
-        "--field-int-count", help="Number of int field", type=int, default=5
+        "--field-int-count", help="Number of int field", type=int, default=0
     )
     parser.add_argument(
-        "--field-float-count", help="Number of float field", type=int, default=4
+        "--field-float-count", help="Number of float field", type=int, default=0
     )
     parser.add_argument(
-        "--field-str-count", help="Number of string field", type=int, default=1
+        "--field-str-count", help="Number of string field", type=int, default=0
     )
     parser.add_argument(
         "--field-str-cardinality",
