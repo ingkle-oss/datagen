@@ -60,7 +60,7 @@ if __name__ == "__main__":
         help="Kafka delivery timeout in ms",
         default=30000,
     )
-    parser.add_argument("--kafka-linger-ms", help="linger ms", default=1000)
+    parser.add_argument("--kafka-linger-ms", help="Kafka linger ms", default=1000)
     parser.add_argument(
         "--kafka-batch-size",
         help="Kafka maximum size of size (in bytes) of all messages batched in one MessageSet",
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--kafka-acks",
-        help="Idempotent delivery option ",
+        help="Kafka idempotent delivery option ",
         choices=[1, 0, -1],
         type=int,
         default=0,
@@ -92,6 +92,41 @@ if __name__ == "__main__":
         help="Kafka delivery report interval",
         type=int,
         default=10,
+    )
+
+    # Output
+    parser.add_argument(
+        "--output-type",
+        help="Output message type",
+        choices=["csv", "json", "bson"],
+        default="json",
+    )
+    parser.add_argument(
+        "--key-vals",
+        help="Custom key values (e.g. edge=test-edge)",
+        nargs="*",
+        default=[],
+    )
+    parser.add_argument(
+        "--rate", help="Number of records in a group", type=int, default=1
+    )
+    parser.add_argument(
+        "--rate-interval",
+        help="Interval in seconds between groups",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--timestamp-start",
+        help="timestamp start in epoch seconds",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--timestamp-diff",
+        help="timestamp difference in seconds",
+        type=float,
+        default=None,
     )
 
     # PostgreSQL
@@ -177,41 +212,6 @@ if __name__ == "__main__":
         help="PostgreSQL update interval in seconds",
         type=int,
         default=30,
-    )
-
-    # Output
-    parser.add_argument(
-        "--output-type",
-        help="Output message type",
-        choices=["csv", "json", "bson"],
-        default="json",
-    )
-    parser.add_argument(
-        "--key-vals",
-        help="Custom key values (e.g. edge=test-edge)",
-        nargs="*",
-        default=[],
-    )
-    parser.add_argument(
-        "--rate", help="Number of records in a group", type=int, default=1
-    )
-    parser.add_argument(
-        "--rate-interval",
-        help="Interval in seconds between groups",
-        type=float,
-        default=None,
-    )
-    parser.add_argument(
-        "--timestamp-start",
-        help="timestamp start in epoch seconds",
-        type=float,
-        default=None,
-    )
-    parser.add_argument(
-        "--timestamp-diff",
-        help="timestamp difference in seconds",
-        type=float,
-        default=None,
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")

@@ -121,25 +121,27 @@ if __name__ == "__main__":
         default="gzip",
     )
     parser.add_argument(
-        "--kafka-delivery-timeout-ms", help="delivery timeout in ms", default=30000
+        "--kafka-delivery-timeout-ms",
+        help="Kafka delivery timeout in ms",
+        default=30000,
     )
-    parser.add_argument("--kafka-linger-ms", help="linger ms", default=1000)
+    parser.add_argument("--kafka-linger-ms", help="Kafka linger ms", default=1000)
     parser.add_argument(
         "--kafka-batch-size",
-        help="Maximum size of size (in bytes) of all messages batched in one MessageSet",
+        help="Kafka maximum size of size (in bytes) of all messages batched in one MessageSet",
         default=1000000,
     )
     parser.add_argument(
         "--kafka-batch-num-messages",
-        help="Maximum number of messages batched in one MessageSet",
+        help="Kafka maximum number of messages batched in one MessageSet",
         default=10000,
     )
     parser.add_argument(
-        "--kafka-message-max-bytes", help="message max bytes", default=1000000
+        "--kafka-message-max-bytes", help="Kafka message max bytes", default=1000000
     )
     parser.add_argument(
         "--kafka-acks",
-        help="Idempotent delivery option ",
+        help="Kafka idempotent delivery option ",
         choices=[1, 0, -1],
         type=int,
         default=0,
@@ -170,7 +172,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--bigfile",
         help="Whether file is big or not (default: False)",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=False,
     )
     parser.add_argument(
@@ -193,6 +195,7 @@ if __name__ == "__main__":
         nargs="*",
         default=[],
     )
+
     parser.add_argument(
         "--rate", help="Number of records in a group", type=int, default=1
     )
@@ -202,7 +205,20 @@ if __name__ == "__main__":
         type=float,
         default=None,
     )
+    parser.add_argument(
+        "--timestamp-start",
+        help="timestamp start in epoch seconds",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--timestamp-diff",
+        help="timestamp difference in seconds",
+        type=float,
+        default=None,
+    )
 
+    # Field options
     parser.add_argument(
         "--incremental-field",
         help="Incremental field (int) from 0",
@@ -220,19 +236,6 @@ if __name__ == "__main__":
         "--interval-field-unit",
         help="Interval field unit",
         choices=["second", "microsecond", "millisecond", "nanosecond"],
-        default=None,
-    )
-
-    parser.add_argument(
-        "--timestamp-start",
-        help="timestamp start in epoch seconds",
-        type=float,
-        default=None,
-    )
-    parser.add_argument(
-        "--timestamp-diff",
-        help="timestamp difference in seconds",
-        type=float,
         default=None,
     )
 
@@ -259,6 +262,37 @@ if __name__ == "__main__":
     for kv in args.key_vals:
         key, val = kv.split("=")
         key_vals[key] = val
+
+    REPORT_COUNT = 0
+    PREV_OFFSET = {}
+
+    def delivery_report(err, msg):
+        global REPORT_COUNT
+        global PREV_OFFSET
+
+        if err is not None:
+            logging.warning(f"Message delivery failed: {err}")
+            return
+
+        REPORT_COUNT += 1
+        if REPORT_COUNT >= args.kafka_report_interval:
+            REPORT_COUNT = 0
+            partition = msg.parition()
+            offset = msg.offset()
+            logging.info(
+                "Message delivered to error=%s topic=%s partition=%s offset=%s (delta=%s) latency=%s",
+                msg.error(),
+                msg.topic(),
+                msg.partition(),
+                offset,
+                (
+                    (offset - PREV_OFFSET[f"{partition}"])
+                    if f"{partition}" in PREV_OFFSET and offset is not None
+                    else 0
+                ),
+                msg.latency(),
+            )
+            PREV_OFFSET[f"{partition}"] = offset
 
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
@@ -297,37 +331,6 @@ if __name__ == "__main__":
     configs.pop("sasl.password", None)
     logging.info("Producer created:")
     logging.info(configs)
-
-    REPORT_COUNT = 0
-    PREV_OFFSET = {}
-
-    def delivery_report(err, msg):
-        global REPORT_COUNT
-        global PREV_OFFSET
-
-        if err is not None:
-            logging.warning(f"Message delivery failed: {err}")
-            return
-
-        REPORT_COUNT += 1
-        if REPORT_COUNT >= args.kafka_report_interval:
-            REPORT_COUNT = 0
-            partition = msg.partition()
-            offset = msg.offset()
-            logging.info(
-                "Message delivered to error=%s topic=%s partition=%s offset=%s (delta=%s) latency=%s",
-                msg.error(),
-                msg.topic(),
-                msg.partition(),
-                offset,
-                (
-                    (offset - PREV_OFFSET[f"{partition}"])
-                    if f"{partition}" in PREV_OFFSET and offset is not None
-                    else 0
-                ),
-                msg.latency(),
-            )
-            PREV_OFFSET[f"{partition}"] = offset
 
     rate = args.rate
     divisor = 1.0

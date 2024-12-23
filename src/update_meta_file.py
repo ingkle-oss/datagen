@@ -54,7 +54,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--bigfile",
         help="Whether file is big or not (default: False)",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=False,
     )
     parser.add_argument(

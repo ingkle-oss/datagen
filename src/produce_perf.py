@@ -57,45 +57,30 @@ if __name__ == "__main__":
         default="gzip",
     )
     parser.add_argument(
-        "--kafka-delivery-timeout-ms", help="delivery timeout in ms", default=30000
+        "--kafka-delivery-timeout-ms",
+        help="Kafka delivery timeout in ms",
+        default=30000,
     )
-    parser.add_argument("--kafka-linger-ms", help="linger ms", default=1000)
+    parser.add_argument("--kafka-linger-ms", help="Kafka linger ms", default=1000)
     parser.add_argument(
         "--kafka-batch-size",
-        help="Maximum size of size (in bytes) of all messages batched in one MessageSet",
+        help="Kafka maximum size of size (in bytes) of all messages batched in one MessageSet",
         default=1000000,
     )
     parser.add_argument(
         "--kafka-batch-num-messages",
-        help="Maximum number of messages batched in one MessageSet",
+        help="Kafka maximum number of messages batched in one MessageSet",
         default=10000,
     )
     parser.add_argument(
-        "--kafka-message-max-bytes", help="message max bytes", default=1000000
+        "--kafka-message-max-bytes", help="Kafka message max bytes", default=1000000
     )
     parser.add_argument(
         "--kafka-acks",
-        help="Idempotent delivery option ",
+        help="Kafka idempotent delivery option ",
         choices=[1, 0, -1],
         type=int,
         default=0,
-    )
-
-    # File
-    parser.add_argument(
-        "--s3endpoint",
-        help="S3 url",
-        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
-    )
-    parser.add_argument("--s3accesskey", help="S3 accesskey")
-    parser.add_argument("--s3secretkey", help="S3 secretkey")
-
-    parser.add_argument("--filepath", help="file to be produced", required=True)
-    parser.add_argument(
-        "--input-type",
-        help="Input file type",
-        choices=["csv", "json", "bson"],
-        default="json",
     )
 
     # Output
@@ -120,8 +105,6 @@ if __name__ == "__main__":
         type=float,
         default=None,
     )
-    parser.add_argument("--loop-max", help="maximum loop count", type=int, default=1)
-
     parser.add_argument(
         "--timestamp-start",
         help="timestamp start in epoch seconds",
@@ -134,6 +117,25 @@ if __name__ == "__main__":
         type=float,
         required=True,
     )
+
+    # File
+    parser.add_argument(
+        "--s3endpoint",
+        help="S3 url",
+        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
+    )
+    parser.add_argument("--s3accesskey", help="S3 accesskey")
+    parser.add_argument("--s3secretkey", help="S3 secretkey")
+
+    parser.add_argument("--filepath", help="file to be produced", required=True)
+    parser.add_argument(
+        "--input-type",
+        help="Input file type",
+        choices=["csv", "json", "bson"],
+        default="json",
+    )
+
+    parser.add_argument("--loop-max", help="maximum loop count", type=int, default=1)
 
     parser.add_argument(
         "--result-filepath",
