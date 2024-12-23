@@ -52,7 +52,7 @@ def publish(
     global UNIQUE_ALT_PREV_VALUE
     global UNIQUE_ALT_IDX
 
-    values = {k: v for k, v in values.items() if v}
+    values = {k: v for k, v in values.items() if v is not None}
 
     if incremental_field and incremental_field in values:
         values[incremental_field] = INCREMENTAL_IDX

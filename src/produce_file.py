@@ -37,7 +37,7 @@ def produce(
     global UNIQUE_ALT_PREV_VALUE
     global UNIQUE_ALT_IDX
 
-    values = {k: v for k, v in values.items() if v}
+    values = {k: v for k, v in values.items() if v is not None}
 
     if incremental_field and incremental_field in values:
         values[incremental_field] = INCREMENTAL_IDX
@@ -277,7 +277,7 @@ if __name__ == "__main__":
         REPORT_COUNT += 1
         if REPORT_COUNT >= args.kafka_report_interval:
             REPORT_COUNT = 0
-            partition = msg.parition()
+            partition = msg.partition()
             offset = msg.offset()
             logging.info(
                 "Message delivered to error=%s topic=%s partition=%s offset=%s (delta=%s) latency=%s",
