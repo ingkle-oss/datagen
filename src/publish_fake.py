@@ -163,7 +163,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--key-vals",
+        "--custom-key-vals",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -186,10 +186,10 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    key_vals = {}
-    for kv in args.key_vals:
+    custom_key_vals = {}
+    for kv in args.custom_key_vals:
         key, val = kv.split("=")
-        key_vals[key] = val
+        custom_key_vals[key] = val
 
     if args.use_postgresql_store:
         if not all(
@@ -298,14 +298,14 @@ if __name__ == "__main__":
                 fake.update_schema()
                 prev = now
 
-            if not fake.get_schema() and not key_vals:
+            if not fake.get_schema() and not custom_key_vals:
                 logging.warning("No schema found to be used")
             else:
                 for idx in range(args.rate):
                     epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
                     row = {
                         "timestamp": int(epoch.timestamp() * 1e6),
-                        **key_vals,
+                        **custom_key_vals,
                         **fake.values(),
                     }
 

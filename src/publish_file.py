@@ -72,7 +72,7 @@ def publish(
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
-        **key_vals,
+        **custom_key_vals,
         **values,
     }
 
@@ -164,7 +164,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--key-vals",
+        "--custom-key-vals",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -207,10 +207,10 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    key_vals = {}
-    for kv in args.key_vals:
+    custom_key_vals = {}
+    for kv in args.custom_key_vals:
         key, val = kv.split("=")
-        key_vals[key] = val
+        custom_key_vals[key] = val
 
     mqttc = mqtt.Client(
         client_id=args.mqtt_client_id,
@@ -305,7 +305,7 @@ if __name__ == "__main__":
                         else:
                             values = json.loads(line)
 
-                        if not values and not key_vals:
+                        if not values and not custom_key_vals:
                             logging.debug("No values to be produced")
                             continue
 
@@ -318,7 +318,7 @@ if __name__ == "__main__":
                             divisor,
                             args.mqtt_topic,
                             args.mqtt_qos,
-                            key_vals,
+                            custom_key_vals,
                             epoch,
                             values,
                         )
@@ -339,7 +339,7 @@ if __name__ == "__main__":
                 logging.info("Finished")
     else:
         values = load_values(filepath, args.input_type)
-        if not values and not key_vals:
+        if not values and not custom_key_vals:
             logging.warning("No values to be produced")
             exit(0)
 
@@ -359,7 +359,7 @@ if __name__ == "__main__":
                         divisor,
                         args.mqtt_topic,
                         args.mqtt_qos,
-                        key_vals,
+                        custom_key_vals,
                         epoch,
                         values[val_idx],
                     )

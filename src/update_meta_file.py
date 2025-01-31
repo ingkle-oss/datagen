@@ -65,7 +65,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--key-vals",
+        "--custom-key-vals",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -80,10 +80,10 @@ if __name__ == "__main__":
     )
     logger = logging.getLogger(__name__)
 
-    key_vals = {}
-    for kv in args.key_vals:
+    custom_key_vals = {}
+    for kv in args.custom_key_vals:
         key, val = kv.split("=")
-        key_vals[key] = val
+        custom_key_vals[key] = val
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):
@@ -115,17 +115,17 @@ if __name__ == "__main__":
             else:
                 values = json.loads(line)
 
-            if not values and not key_vals:
+            if not values and not custom_key_vals:
                 raise RuntimeError("No values to be used")
     else:
         values = load_values(filepath, args.input_type)
-        if not values and not key_vals:
+        if not values and not custom_key_vals:
             logging.warning("No values to be produced")
             exit(0)
 
         values = values[0]
 
-    values = {**values, **key_vals}
+    values = {**values, **custom_key_vals}
 
     with psycopg.connect(
         host=args.postgresql_host,

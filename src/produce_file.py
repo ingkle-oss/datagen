@@ -89,7 +89,7 @@ def produce(
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
-        **key_vals,
+        **custom_key_vals,
         **values,
     }
 
@@ -222,7 +222,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--key-vals",
+        "--custom-key-vals",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -290,10 +290,10 @@ if __name__ == "__main__":
             )
         timestamp_enabled = True
 
-    key_vals = {}
-    for kv in args.key_vals:
+    custom_key_vals = {}
+    for kv in args.custom_key_vals:
         key, val = kv.split("=")
-        key_vals[key] = val
+        custom_key_vals[key] = val
 
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
@@ -403,7 +403,7 @@ if __name__ == "__main__":
                     else:
                         values = json.loads(line)
 
-                    if not values and not key_vals:
+                    if not values and not custom_key_vals:
                         logging.debug("No values to be produced")
                         continue
 
@@ -436,7 +436,7 @@ if __name__ == "__main__":
                     time.sleep(wait)
     else:
         values = load_values(filepath, args.input_type)
-        if not values and not key_vals:
+        if not values and not custom_key_vals:
             logging.warning("No values to be produced")
             exit(0)
 
