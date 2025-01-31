@@ -43,12 +43,12 @@ if __name__ == "__main__":
 
     # File
     parser.add_argument(
-        "--s3endpoint",
+        "--s3-endpoint",
         help="S3 url",
         default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
     )
-    parser.add_argument("--s3accesskey", help="S3 accesskey")
-    parser.add_argument("--s3secretkey", help="S3 secretkey")
+    parser.add_argument("--s3-accesskey", help="S3 accesskey")
+    parser.add_argument("--s3-secretkey", help="S3 secretkey")
 
     parser.add_argument("--filepath", help="file to be produced", required=True)
     parser.add_argument(
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     filepath = args.filepath
     if filepath.startswith("s3a://"):
         filepath = download_s3file(
-            filepath, args.s3accesskey, args.s3secretkey, args.s3endpoint
+            filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
         )
 
     if args.bigfile:

@@ -42,8 +42,8 @@ def load_values(filepath: str, filetype: str) -> list[dict] | list[str]:
     return values
 
 
-def download_s3file(filepath: str, s3accesskey: str, s3secretkey: str, s3endpoint: str):
-    logging.info("Downloading file %s from S3... %s", filepath, s3endpoint)
+def download_s3file(filepath: str, accesskey: str, secretkey: str, endpoint: str):
+    logging.info("Downloading file %s from S3... %s", filepath, endpoint)
     tok = urlparse(filepath)
 
     src_bucket = tok.netloc
@@ -51,13 +51,13 @@ def download_s3file(filepath: str, s3accesskey: str, s3secretkey: str, s3endpoin
     _filepath = os.path.basename(tok.path)
 
     session = boto3.Session(
-        aws_access_key_id=s3accesskey,
-        aws_secret_access_key=s3secretkey,
+        aws_access_key_id=accesskey,
+        aws_secret_access_key=secretkey,
         aws_session_token=None,
         region_name="ap-northeast-2",
     )
 
-    s3 = session.client(service_name="s3", endpoint_url=s3endpoint)
+    s3 = session.client(service_name="s3", endpoint_url=endpoint)
     meta_data = s3.head_object(Bucket=src_bucket, Key=src_key)
     total_length = int(meta_data.get("ContentLength", 0))
 
