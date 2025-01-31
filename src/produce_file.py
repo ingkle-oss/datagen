@@ -19,6 +19,38 @@ INCREMENTAL_IDX = 0
 UNIQUE_ALT_PREV_VALUE = None
 UNIQUE_ALT_IDX = -1
 
+REPORT_COUNT = 0
+PREV_OFFSET = {}
+
+
+def delivery_report(err, msg):
+    global REPORT_COUNT
+    global PREV_OFFSET
+
+    if err is not None:
+        logging.warning(f"Message delivery failed: {err}")
+        return
+
+    REPORT_COUNT += 1
+    if REPORT_COUNT >= args.kafka_report_interval:
+        REPORT_COUNT = 0
+        partition = msg.partition()
+        offset = msg.offset()
+        logging.info(
+            "Message delivered to error=%s topic=%s partition=%s offset=%s (delta=%s) latency=%s",
+            msg.error(),
+            msg.topic(),
+            msg.partition(),
+            offset,
+            (
+                (offset - PREV_OFFSET[f"{partition}"])
+                if f"{partition}" in PREV_OFFSET and offset is not None
+                else 0
+            ),
+            msg.latency(),
+        )
+        PREV_OFFSET[f"{partition}"] = offset
+
 
 def produce(
     producer: Producer,
@@ -263,37 +295,6 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         key_vals[key] = val
 
-    REPORT_COUNT = 0
-    PREV_OFFSET = {}
-
-    def delivery_report(err, msg):
-        global REPORT_COUNT
-        global PREV_OFFSET
-
-        if err is not None:
-            logging.warning(f"Message delivery failed: {err}")
-            return
-
-        REPORT_COUNT += 1
-        if REPORT_COUNT >= args.kafka_report_interval:
-            REPORT_COUNT = 0
-            partition = msg.partition()
-            offset = msg.offset()
-            logging.info(
-                "Message delivered to error=%s topic=%s partition=%s offset=%s (delta=%s) latency=%s",
-                msg.error(),
-                msg.topic(),
-                msg.partition(),
-                offset,
-                (
-                    (offset - PREV_OFFSET[f"{partition}"])
-                    if f"{partition}" in PREV_OFFSET and offset is not None
-                    else 0
-                ),
-                msg.latency(),
-            )
-            PREV_OFFSET[f"{partition}"] = offset
-
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
     configs = {
@@ -336,7 +337,7 @@ if __name__ == "__main__":
     divisor = 1.0
     if args.interval_field:
         if timestamp_enabled:
-            raise RuntimeError("Cannot use timestamp options with interval field")
+            raise RuntimeError("Cannot use --interval-field with --timestamp-start")
 
         if args.interval_field_unit == "second":
             pass
