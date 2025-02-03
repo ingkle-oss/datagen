@@ -21,7 +21,7 @@ def create_record(
     values: dict,
     epoch: datetime,
     interval: float,
-    record_interval_field: str,
+    interval_field: str,
     interval_divisor: float,
     incremental_field: str,
     unique_alt_field: str,
@@ -44,8 +44,8 @@ def create_record(
             UNIQUE_ALT_IDX += 1
         values[unique_alt_field] = UNIQUE_ALT_IDX
 
-    if record_interval_field and record_interval_field in values:
-        interval = values[record_interval_field] / interval_divisor
+    if interval_field and interval_field in values:
+        interval = values[interval_field] / interval_divisor
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
@@ -152,13 +152,13 @@ if __name__ == "__main__":
 
     # Record interval
     parser.add_argument(
-        "--record-interval", help="Record interval in seconds", type=float, default=1.0
+        "--interval", help="Record interval in seconds", type=float, default=1.0
     )
     parser.add_argument(
-        "--record-interval-field", help="Interval field (float) between records"
+        "--interval-field", help="Interval field (float) between records"
     )
     parser.add_argument(
-        "--record-interval-field-unit",
+        "--interval-field-unit",
         help="Interval field unit",
         choices=["second", "microsecond", "millisecond", "nanosecond"],
     )
@@ -183,23 +183,23 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         custom_rows[key] = val
 
-    interval = args.record_interval
+    interval = args.interval
 
     interval_divisor = 1.0
-    if args.record_interval_field:
-        if args.record_interval_field_unit == "second":
+    if args.interval_field:
+        if args.interval_field_unit == "second":
             pass
-        elif args.record_interval_field_unit == "millisecond":
+        elif args.interval_field_unit == "millisecond":
             interval_divisor = 1e3
-        elif args.record_interval_field_unit == "microsecond":
+        elif args.interval_field_unit == "microsecond":
             interval_divisor = 1e6
-        elif args.record_interval_field_unit == "nanosecond":
+        elif args.interval_field_unit == "nanosecond":
             interval_divisor = 1e9
         else:
             raise RuntimeError(
-                "Invalid interval field unit: %s", args.record_interval_field_unit
+                "Invalid interval field unit: %s", args.interval_field_unit
             )
-        logging.info("Ignores ---record-interval")
+        logging.info("Ignores ---interval")
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):
@@ -258,7 +258,7 @@ if __name__ == "__main__":
                         row,
                         loop_start + timedelta(seconds=elapsed),
                         interval,
-                        args.record_interval_field,
+                        args.interval_field,
                         interval_divisor,
                         args.incremental_field,
                         args.unique_alt_field,
@@ -316,7 +316,7 @@ if __name__ == "__main__":
                     row,
                     loop_start + timedelta(seconds=elapsed),
                     interval,
-                    args.record_interval_field,
+                    args.interval_field,
                     interval_divisor,
                     args.incremental_field,
                     args.unique_alt_field,

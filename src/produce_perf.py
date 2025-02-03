@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     # Record interval
     parser.add_argument(
-        "--record-interval",
+        "--interval",
         help="timestamp difference in seconds",
         type=float,
         default=None,  # args.rate_interval/args.rate
@@ -236,7 +236,7 @@ if __name__ == "__main__":
                 }
             )
             row_idx = (row_idx + 1) % len(values)
-            timestamp_start += timedelta(microseconds=args.record_interval * 1e6)
+            timestamp_start += timedelta(microseconds=args.interval * 1e6)
 
         start = perf_counter()
         producer.poll(0)

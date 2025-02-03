@@ -165,7 +165,7 @@ if __name__ == "__main__":
 
     # Record interval
     parser.add_argument(
-        "--record-interval", help="Record interval in seconds", type=float, default=1.0
+        "--interval", help="Record interval in seconds", type=float, default=1.0
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -181,7 +181,7 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         custom_rows[key] = val
 
-    interval = args.record_interval
+    interval = args.interval
 
     if args.use_postgresql_store:
         if not all(
