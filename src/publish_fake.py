@@ -149,7 +149,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--schema-update--rate-interval",
+        "--schema-update-interval",
         help="PostgreSQL update interval in seconds",
         type=int,
         default=30,
@@ -163,7 +163,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-key-vals",
+        "--custom-rows",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -172,10 +172,16 @@ if __name__ == "__main__":
     # Rate
     parser.add_argument(
         "--rate",
-        help="Number of records to be published for each rate interval",
+        help="Number of records for each loop",
         type=int,
         default=1,
     )
+
+    # Record interval
+    parser.add_argument(
+        "--record-interval", help="Record interval in seconds", type=float, default=1.0
+    )
+
     parser.add_argument(
         "--rate-interval",
         help="Rate interval in seconds",
@@ -191,10 +197,12 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    custom_key_vals = {}
-    for kv in args.custom_key_vals:
+    custom_rows = {}
+    for kv in args.custom_rows:
         key, val = kv.split("=")
-        custom_key_vals[key] = val
+        custom_rows[key] = val
+
+    interval = args.record_interval
 
     if args.use_postgresql_store:
         if not all(
@@ -297,45 +305,45 @@ if __name__ == "__main__":
     try:
         prev = datetime.now(timezone.utc)
         while True:
-            now = datetime.now(timezone.utc)
-
-            if (now - prev).total_seconds() > args.schema_update_interval:
+            if (
+                datetime.now(timezone.utc) - prev
+            ).total_seconds() > args.schema_update_interval:
                 fake.update_schema()
-                prev = now
+                prev = datetime.now(timezone.utc)
 
-            if not fake.get_schema() and not custom_key_vals:
-                logging.warning("No schema found to be used")
-            else:
-                for idx in range(args.rate):
-                    epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
-                    row = {
-                        "timestamp": int(epoch.timestamp() * 1e6),
-                        **custom_key_vals,
-                        **fake.values(),
-                    }
+            if not fake.get_schema() and not custom_rows:
+                logging.warning("No schema found to be used or no custom key values")
+                time.sleep(interval * args.rate)
+                continue
 
-                    try:
-                        ret = mqttc.publish(
-                            topic=args.mqtt_topic,
-                            payload=encode(row, args.output_type),
-                            qos=args.mqtt_qos,
-                        )
-                        ret.wait_for_publish()
-                        logging.debug(row)
-                        logging.debug(
-                            "Published mid: %s, return code: %s", ret.mid, ret.rc
-                        )
-                    except RuntimeError as e:
-                        logging.error("RuntimeError: %s", e)
+            loop_start = datetime.now(timezone.utc)
+            for idx in range(args.rate):
+                row = {
+                    "timestamp": int(
+                        (loop_start + timedelta(seconds=interval * idx)).timestamp()
+                        * 1e6
+                    ),
+                    **custom_rows,
+                    **fake.values(),
+                }
 
-            if args.rate_interval:
-                wait = (
-                    args.rate_interval
-                    - (datetime.now(timezone.utc) - now).total_seconds()
-                )
-                wait = 0.0 if wait < 0 else wait
-                logging.info("Waiting for %f seconds...", wait)
-                time.sleep(wait)
+                try:
+                    ret = mqttc.publish(
+                        topic=args.mqtt_topic,
+                        payload=encode(row, args.output_type),
+                        qos=args.mqtt_qos,
+                    )
+                    ret.wait_for_publish()
+                    logging.debug(row)
+                    logging.debug("Published mid: %s, return code: %s", ret.mid, ret.rc)
+                except RuntimeError as e:
+                    logging.error("RuntimeError: %s", e)
+
+            wait = (interval * args.rate) - (
+                datetime.now(timezone.utc) - loop_start
+            ).total_seconds()
+            wait = 0.0 if wait < 0 else wait
+            time.sleep(wait)
     finally:
         mqttc.loop_stop()
         mqttc.disconnect()

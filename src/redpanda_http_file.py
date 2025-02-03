@@ -12,18 +12,19 @@ import requests
 from fastnumbers import check_float
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from utils.utils import download_s3file, encode, load_values
+from utils.utils import download_s3file, encode, load_rows
 
 
 def create_record(
-    incremental_field: str,
-    unique_alt_field: str,
-    record_interval_field: str,
-    interval_divisor: float,
     kafka_partition: str,
     key: str | None,
-    epoch: datetime,
     values: dict,
+    epoch: datetime,
+    interval: float,
+    record_interval_field: str,
+    interval_divisor: float,
+    incremental_field: str,
+    unique_alt_field: str,
 ) -> tuple[dict, float]:
     global INCREMENTAL_IDX
     global UNIQUE_ALT_PREV_VALUE
@@ -43,13 +44,11 @@ def create_record(
             UNIQUE_ALT_IDX += 1
         values[unique_alt_field] = UNIQUE_ALT_IDX
 
-    wait = None
     if record_interval_field and record_interval_field in values:
-        wait = values[record_interval_field] / interval_divisor
+        interval = values[record_interval_field] / interval_divisor
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
-        **custom_key_vals,
         **values,
     }
 
@@ -61,7 +60,7 @@ def create_record(
             value=row,
             partition=kafka_partition,
         )
-    return record, wait
+    return record, interval
 
 
 if __name__ == "__main__":
@@ -137,7 +136,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-key-vals",
+        "--custom-rows",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -146,40 +145,29 @@ if __name__ == "__main__":
     # Rate
     parser.add_argument(
         "--rate",
-        help="Number of records to be posted for each rate interval",
+        help="Number of records for each loop",
         type=int,
         default=1,
-    )
-    parser.add_argument(
-        "--rate-interval",
-        help="Rate interval in seconds",
-        type=float,
-        default=None,
     )
 
     # Record interval
     parser.add_argument(
-        "--record-interval-field",
-        help="Interval field (float) between records",
-        default=None,
+        "--record-interval", help="Record interval in seconds", type=float, default=1.0
+    )
+    parser.add_argument(
+        "--record-interval-field", help="Interval field (float) between records"
     )
     parser.add_argument(
         "--record-interval-field-unit",
         help="Interval field unit",
         choices=["second", "microsecond", "millisecond", "nanosecond"],
-        default=None,
     )
 
-    # Field options
-    parser.add_argument(
-        "--incremental-field",
-        help="Incremental field (int) from 0",
-        default=None,
-    )
+    # Other field options
+    parser.add_argument("--incremental-field", help="Incremental field (int) from 0")
     parser.add_argument(
         "--unique-alt-field",
         help="Use unique values for alternative field (float type)",
-        default=None,
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -190,13 +178,28 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    custom_key_vals = {}
-    for kv in args.custom_key_vals:
+    custom_rows = {}
+    for kv in args.custom_rows:
         key, val = kv.split("=")
-        custom_key_vals[key] = val
+        custom_rows[key] = val
 
-    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-    scheme = "https" if args.redpanda_ssl else "http"
+    interval = args.record_interval
+
+    interval_divisor = 1.0
+    if args.record_interval_field:
+        if args.record_interval_field_unit == "second":
+            pass
+        elif args.record_interval_field_unit == "millisecond":
+            interval_divisor = 1e3
+        elif args.record_interval_field_unit == "microsecond":
+            interval_divisor = 1e6
+        elif args.record_interval_field_unit == "nanosecond":
+            interval_divisor = 1e9
+        else:
+            raise RuntimeError(
+                "Invalid interval field unit: %s", args.record_interval_field_unit
+            )
+        logging.info("Ignores ---record-interval")
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):
@@ -204,23 +207,8 @@ if __name__ == "__main__":
             filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
         )
 
-    rate = args.rate
-    divisor = 1.0
-    if args.record_interval_field:
-        if args.record_interval_field_unit == "second":
-            pass
-        elif args.record_interval_field_unit == "millisecond":
-            divisor = 1e3
-        elif args.record_interval_field_unit == "microsecond":
-            divisor = 1e6
-        elif args.record_interval_field_unit == "nanosecond":
-            divisor = 1e9
-        else:
-            raise RuntimeError(
-                "Invalid interval field unit: %s" % args.record_interval_field_unit
-            )
-        logging.info("Ignores --rate option...")
-        rate = 1
+    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+    scheme = "https" if args.redpanda_ssl else "http"
 
     INCREMENTAL_IDX = 0
     UNIQUE_ALT_PREV_VALUE = None
@@ -237,41 +225,42 @@ if __name__ == "__main__":
                 headers = line.strip().split(",")
 
             body_start = f.tell()
-
             while True:
-                wait = None
-                now = datetime.now(timezone.utc)
                 records = []
-                for idx in range(rate):
-                    epoch = now + timedelta(microseconds=idx * (1000000 / rate))
-
+                loop_start = datetime.now(timezone.utc)
+                for idx in range(args.rate):
                     line = f.readline()
                     if not line:
                         f.seek(body_start)
                         line = f.readline()
 
                     if args.input_type == "csv":
-                        values = [
+                        row = [
                             float(v) if check_float(v) else v
                             for v in line.strip().split(",")
                         ]
-                        values = dict(zip(headers, values))
+                        row = dict(zip(headers, row))
                     else:
-                        values = json.loads(line)
+                        row = json.loads(line)
 
-                    if not values and not custom_key_vals:
+                    row = {
+                        **custom_rows,
+                        **row,
+                    }
+                    if not row:
                         logging.debug("No values to be produced")
                         continue
 
-                    record, wait = create_record(
-                        args.incremental_field,
-                        args.unique_alt_field,
-                        args.record_interval_field,
-                        divisor,
+                    record, interval = create_record(
                         args.kafka_partition,
                         args.kafka_key,
-                        epoch,
-                        values,
+                        row,
+                        loop_start + timedelta(seconds=interval * idx),
+                        interval,
+                        args.record_interval_field,
+                        interval_divisor,
+                        args.incremental_field,
+                        args.unique_alt_field,
                     )
                     records.append(record)
 
@@ -287,49 +276,50 @@ if __name__ == "__main__":
                     },
                     verify=args.redpanda_verify,
                 ).json()
-
                 logging.info(
                     f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
                 )
 
-                if wait or args.rate_interval:
-                    if args.rate_interval:
-                        wait = (
-                            args.rate_interval
-                            - (datetime.now(timezone.utc) - now).total_seconds()
-                        )
-                        wait = 0.0 if wait < 0 else wait
+                wait = (interval * args.rate) - (
+                    datetime.now(timezone.utc) - loop_start
+                ).total_seconds()
+                wait = 0.0 if wait < 0 else wait
+                time.sleep(wait)
 
-                    logging.info("Waiting for %f seconds...", wait)
-                    time.sleep(wait)
             logging.info("Finished")
 
     else:
-        values = load_values(filepath, args.input_type)
-        if not values and not custom_key_vals:
+        rows = load_rows(filepath, args.input_type)
+        if not rows:
             logging.warning("No values to be produced")
             exit(0)
 
-        val_idx = 0
+        row_idx = 0
         while True:
-            wait = None
-            now = datetime.now(timezone.utc)
             records = []
-            for idx in range(rate):
-                epoch = now + timedelta(microseconds=idx * (1000000 / rate))
+            loop_start = datetime.now(timezone.utc)
+            for idx in range(args.rate):
+                row = {
+                    **custom_rows,
+                    **rows[row_idx],
+                }
+                if not row:
+                    logging.debug("No values to be produced")
+                    continue
 
-                record, wait = create_record(
-                    args.incremental_field,
-                    args.unique_alt_field,
-                    args.record_interval_field,
-                    divisor,
+                record, interval = create_record(
                     args.kafka_partition,
                     args.kafka_key,
-                    epoch,
-                    values[val_idx],
+                    row,
+                    loop_start + timedelta(seconds=interval * idx),
+                    interval,
+                    args.record_interval_field,
+                    interval_divisor,
+                    args.incremental_field,
+                    args.unique_alt_field,
                 )
                 records.append(record)
-                val_idx = (val_idx + 1) % len(values)
+                row_idx = (row_idx + 1) % len(rows)
 
             res = requests.post(
                 url=(
@@ -343,19 +333,15 @@ if __name__ == "__main__":
                 },
                 verify=args.redpanda_verify,
             ).json()
+            logging.debug(encode({"records": records}, args.output_type))
             logging.info(
                 f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
             )
 
-            if wait or args.rate_interval:
-                if args.rate_interval:
-                    wait = (
-                        args.rate_interval
-                        - (datetime.now(timezone.utc) - now).total_seconds()
-                    )
-                    wait = 0.0 if wait < 0 else wait
-
-                logging.info("Waiting for %f seconds...", wait)
-                time.sleep(wait)
+            wait = (interval * args.rate) - (
+                datetime.now(timezone.utc) - loop_start
+            ).total_seconds()
+            wait = 0.0 if wait < 0 else wait
+            time.sleep(wait)
 
         logging.info("Finished")

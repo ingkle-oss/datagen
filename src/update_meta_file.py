@@ -10,7 +10,7 @@ import logging
 import psycopg
 from fastnumbers import check_float
 
-from utils.utils import download_s3file, load_values
+from utils.utils import download_s3file, load_rows
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--custom-key-vals",
+        "--custom-rows",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -80,10 +80,10 @@ if __name__ == "__main__":
     )
     logger = logging.getLogger(__name__)
 
-    custom_key_vals = {}
-    for kv in args.custom_key_vals:
+    custom_rows = {}
+    for kv in args.custom_rows:
         key, val = kv.split("=")
-        custom_key_vals[key] = val
+        custom_rows[key] = val
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):
@@ -115,17 +115,17 @@ if __name__ == "__main__":
             else:
                 values = json.loads(line)
 
-            if not values and not custom_key_vals:
+            if not values and not custom_rows:
                 raise RuntimeError("No values to be used")
     else:
-        values = load_values(filepath, args.input_type)
-        if not values and not custom_key_vals:
+        values = load_rows(filepath, args.input_type)
+        if not values and not custom_rows:
             logging.warning("No values to be produced")
             exit(0)
 
         values = values[0]
 
-    values = {**values, **custom_key_vals}
+    values = {**values, **custom_rows}
 
     with psycopg.connect(
         host=args.postgresql_host,

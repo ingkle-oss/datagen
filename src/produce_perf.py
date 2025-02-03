@@ -12,7 +12,7 @@ from time import perf_counter
 import pandas as pd
 from confluent_kafka import KafkaException, Producer
 
-from utils.utils import download_s3file, encode, load_values
+from utils.utils import download_s3file, encode, load_rows
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-key-vals",
+        "--custom-rows",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -160,10 +160,10 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    custom_key_vals = {}
-    for kv in args.custom_key_vals:
+    custom_rows = {}
+    for kv in args.custom_rows:
         key, val = kv.split("=")
-        custom_key_vals[key] = val
+        custom_rows[key] = val
 
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
@@ -212,12 +212,12 @@ if __name__ == "__main__":
             filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
         )
 
-    values = load_values(filepath, args.input_type)
-    if not values and not custom_key_vals:
+    values = load_rows(filepath, args.input_type)
+    if not values and not custom_rows:
         logging.warning("No values to be produced")
         exit(0)
 
-    val_idx = 0
+    row_idx = 0
     timestamp_start = datetime.fromtimestamp(args.timestamp_start, timezone.utc)
     total_elapsed = []
     for loop_idx in range(args.loop_max):
@@ -231,11 +231,11 @@ if __name__ == "__main__":
                     "timestamp": int(timestamp_start.timestamp() * 1e6),
                     "created_at": at,
                     "updated_at": at,
-                    **custom_key_vals,
-                    **values[val_idx],
+                    **custom_rows,
+                    **values[row_idx],
                 }
             )
-            val_idx = (val_idx + 1) % len(values)
+            row_idx = (row_idx + 1) % len(values)
             timestamp_start += timedelta(microseconds=args.record_interval * 1e6)
 
         start = perf_counter()

@@ -13,57 +13,48 @@ from datetime import datetime, timedelta, timezone
 from confluent_kafka import KafkaException, Producer
 from fastnumbers import check_float
 
-from utils.utils import download_s3file, encode, load_values
+from utils.utils import download_s3file, encode, load_rows
 
 INCREMENTAL_IDX = 0
 UNIQUE_ALT_PREV_VALUE = None
 UNIQUE_ALT_IDX = -1
 
 REPORT_COUNT = 0
-PREV_OFFSET = {}
 
 
 def delivery_report(err, msg):
-    global REPORT_COUNT
-    global PREV_OFFSET
-
     if err is not None:
         logging.warning(f"Message delivery failed: {err}")
         return
 
-    REPORT_COUNT += 1
+    global REPORT_COUNT
+
     if REPORT_COUNT >= args.kafka_report_interval:
         REPORT_COUNT = 0
-        partition = msg.partition()
-        offset = msg.offset()
         logging.info(
-            "Message delivered to error=%s topic=%s partition=%s offset=%s (delta=%s) latency=%s",
+            "Message delivered to error=%s topic=%s partition=%s offset=%s latency=%s",
             msg.error(),
             msg.topic(),
             msg.partition(),
-            offset,
-            (
-                (offset - PREV_OFFSET[f"{partition}"])
-                if f"{partition}" in PREV_OFFSET and offset is not None
-                else 0
-            ),
+            msg.offset(),
             msg.latency(),
         )
-        PREV_OFFSET[f"{partition}"] = offset
+    REPORT_COUNT += 1
 
 
 def produce(
     producer: Producer,
     output_type: str,
+    topic: str,
+    partition: int,
+    key: str | None,
+    values: dict,
+    epoch: datetime,
+    interval: float,
+    record_interval_field: str,
+    record_interval_divisor: float,
     incremental_field: str,
     unique_alt_field: str,
-    record_interval_field: str,
-    interval_divisor: float,
-    topic: str,
-    key: str | None,
-    epoch: datetime,
-    values: dict,
-    partition: int = 0,
 ) -> float:
     global INCREMENTAL_IDX
     global UNIQUE_ALT_PREV_VALUE
@@ -83,13 +74,11 @@ def produce(
             UNIQUE_ALT_IDX += 1
         values[unique_alt_field] = UNIQUE_ALT_IDX
 
-    wait = None
     if record_interval_field and record_interval_field in values:
-        wait = values[record_interval_field] / interval_divisor
+        interval = values[record_interval_field] / record_interval_divisor
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
-        **custom_key_vals,
         **values,
     }
 
@@ -107,7 +96,7 @@ def produce(
 
     logging.debug("Produced: %s:%s", args.kafka_key, row)
 
-    return wait
+    return interval
 
 
 if __name__ == "__main__":
@@ -133,9 +122,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--kafka-sasl-password", help="Kafka SASL plain password", required=True
     )
-    parser.add_argument(
-        "--kafka-ssl-ca-location", help="Kafka SSL CA file", default=None
-    )
+    parser.add_argument("--kafka-ssl-ca-location", help="Kafka SSL CA file")
     parser.add_argument(
         "--kafka-auto-offset-reset",
         help="Kafka auto offset reset (earliest/latest)",
@@ -145,7 +132,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--kafka-partition", help="Kafka partition", type=int, default=0
     )
-    parser.add_argument("--kafka-key", help="Kafka partition key", default=None)
+    parser.add_argument("--kafka-key", help="Kafka partition key")
     parser.add_argument(
         "--kafka-compression-type",
         help="Kafka producer compression type",
@@ -180,12 +167,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--kafka-flush",
-        help="Kafka flush after each produce (default: True)",
+        help="Kafka flush after each rate loop (default: True)",
         action=argparse.BooleanOptionalAction,
         default=True,
     )
     parser.add_argument(
-        "--kafka-report--rate-interval",
+        "--kafka-report-interval",
         help="Kafka delivery report interval",
         type=int,
         default=10,
@@ -222,7 +209,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-key-vals",
+        "--custom-rows",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -231,54 +218,29 @@ if __name__ == "__main__":
     # Rate
     parser.add_argument(
         "--rate",
-        help="Number of records to be produced for each rate interval",
+        help="Number of records for each loop",
         type=int,
         default=1,
-    )
-    parser.add_argument(
-        "--rate-interval",
-        help="Rate interval in seconds",
-        type=float,
-        default=None,
-    )
-
-    # Timestamp options
-    parser.add_argument(
-        "--timestamp-start",
-        help="timestamp start in epoch seconds",
-        type=float,
-        default=None,  # now
     )
 
     # Record interval
     parser.add_argument(
-        "--record-interval",
-        help="timestamp difference in seconds",
-        type=float,
-        default=None,  # args.rate_interval/args.rate
+        "--record-interval", help="Record interval in seconds", type=float, default=1.0
     )
     parser.add_argument(
-        "--record-interval-field",
-        help="Interval field (float) between records",
-        default=None,
+        "--record-interval-field", help="Interval field (float) between records"
     )
     parser.add_argument(
         "--record-interval-field-unit",
         help="Interval field unit",
         choices=["second", "microsecond", "millisecond", "nanosecond"],
-        default=None,
     )
 
-    # Field options
-    parser.add_argument(
-        "--incremental-field",
-        help="Incremental field (int) from 0",
-        default=None,
-    )
+    # Other field options
+    parser.add_argument("--incremental-field", help="Incremental field (int) from 0")
     parser.add_argument(
         "--unique-alt-field",
         help="Use unique values for alternative field (float type)",
-        default=None,
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -289,21 +251,34 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    timestamp_enabled = False
-    if any([args.timestamp_start, args.record_interval]):
-        if not all([args.timestamp_start, args.record_interval]):
-            raise ValueError(
-                (
-                    "Some timestamp options are not enough, "
-                    f"timestamp-start: {args.timestamp_start}, timestamp-diff: {args.record_interval}",
-                )
-            )
-        timestamp_enabled = True
+    custom_rows = {}
+    for kv in args.custom_rows:
+        key, row = kv.split("=")
+        custom_rows[key] = row
 
-    custom_key_vals = {}
-    for kv in args.custom_key_vals:
-        key, val = kv.split("=")
-        custom_key_vals[key] = val
+    interval = args.record_interval
+
+    interval_divisor = 1.0
+    if args.record_interval_field:
+        if args.record_interval_field_unit == "second":
+            pass
+        elif args.record_interval_field_unit == "millisecond":
+            interval_divisor = 1e3
+        elif args.record_interval_field_unit == "microsecond":
+            interval_divisor = 1e6
+        elif args.record_interval_field_unit == "nanosecond":
+            interval_divisor = 1e9
+        else:
+            raise RuntimeError(
+                "Invalid interval field unit: %s", args.record_interval_field_unit
+            )
+        logging.info("Ignores ---record-interval")
+
+    filepath = args.filepath
+    if filepath.startswith("s3a://"):
+        filepath = download_s3file(
+            filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
+        )
 
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
@@ -343,35 +318,6 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
-    rate = args.rate
-    divisor = 1.0
-    if args.record_interval_field:
-        if timestamp_enabled:
-            raise RuntimeError(
-                "Cannot use --record-interval-field with --timestamp-start"
-            )
-
-        if args.record_interval_field_unit == "second":
-            pass
-        elif args.record_interval_field_unit == "millisecond":
-            divisor = 1e3
-        elif args.record_interval_field_unit == "microsecond":
-            divisor = 1e6
-        elif args.record_interval_field_unit == "nanosecond":
-            divisor = 1e9
-        else:
-            raise RuntimeError(
-                "Invalid interval field unit: %s" % args.record_interval_field_unit
-            )
-        logging.info("Ignores --rate and ---rate-interval options...")
-        rate = 1
-
-    filepath = args.filepath
-    if filepath.startswith("s3a://"):
-        filepath = download_s3file(
-            filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
-        )
-
     # For bigfile, load file one by one
     if args.bigfile:
         if args.input_type == "bson":
@@ -383,119 +329,97 @@ if __name__ == "__main__":
                 headers = line.strip().split(",")
 
             body_start = f.tell()
-
-            if timestamp_enabled:
-                timestamp_start = datetime.fromtimestamp(
-                    args.timestamp_start, timezone.utc
-                )
-
             while True:
-                wait = None
-                now = datetime.now(timezone.utc)
-                for idx in range(rate):
-                    if timestamp_enabled:
-                        epoch = timestamp_start
-                        timestamp_start += timedelta(
-                            microseconds=args.record_interval * 1e6
-                        )
-                    else:
-                        epoch = now + timedelta(microseconds=idx * (1000000 / rate))
-
+                loop_start = datetime.now(timezone.utc)
+                for idx in range(args.rate):
                     line = f.readline()
                     if not line:
                         f.seek(body_start)
                         line = f.readline()
 
+                    row = {}
                     if args.input_type == "csv":
-                        values = [
+                        row = [
                             float(v) if check_float(v) else v
                             for v in line.strip().split(",")
                         ]
-                        values = dict(zip(headers, values))
+                        row = dict(zip(headers, row))
                     else:
-                        values = json.loads(line)
+                        row = json.loads(line)
 
-                    if not values and not custom_key_vals:
+                    row = {
+                        **custom_rows,
+                        **row,
+                    }
+                    if not row:
                         logging.debug("No values to be produced")
                         continue
 
-                    wait = produce(
+                    interval = produce(
                         producer,
                         args.output_type,
+                        args.kafka_topic,
+                        args.kafka_partition,
+                        args.kafka_key,
+                        row,
+                        loop_start + timedelta(seconds=interval * idx),
+                        interval,
+                        args.record_interval_field,
+                        interval_divisor,
                         args.incremental_field,
                         args.unique_alt_field,
-                        args.record_interval_field,
-                        divisor,
-                        args.kafka_topic,
-                        args.kafka_key,
-                        epoch,
-                        values,
-                        args.kafka_partition,
                     )
 
                 if args.kafka_flush:
                     producer.flush()
 
-                if wait or args.rate_interval:
-                    if args.rate_interval:
-                        wait = (
-                            args.rate_interval
-                            - (datetime.now(timezone.utc) - now).total_seconds()
-                        )
-                        wait = 0.0 if wait < 0 else wait
-
-                    logging.info("Waiting for %f seconds...", wait)
-                    time.sleep(wait)
+                wait = (interval * args.rate) - (
+                    datetime.now(timezone.utc) - loop_start
+                ).total_seconds()
+                wait = 0.0 if wait < 0 else wait
+                time.sleep(wait)
     else:
-        values = load_values(filepath, args.input_type)
-        if not values and not custom_key_vals:
+        rows = load_rows(filepath, args.input_type)
+        if not rows:
             logging.warning("No values to be produced")
             exit(0)
 
-        if timestamp_enabled:
-            timestamp_start = datetime.fromtimestamp(args.timestamp_start, timezone.utc)
-
-        val_idx = 0
+        row_idx = 0
         while True:
-            wait = None
-            now = datetime.now(timezone.utc)
-            for idx in range(rate):
-                if timestamp_enabled:
-                    epoch = timestamp_start
-                    timestamp_start += timedelta(
-                        microseconds=args.record_interval * 1e6
-                    )
-                else:
-                    epoch = now + timedelta(microseconds=idx * (1000000 / rate))
+            loop_start = datetime.now(timezone.utc)
+            for idx in range(args.rate):
+                row = {
+                    **custom_rows,
+                    **rows[row_idx],
+                }
+                if not row:
+                    logging.debug("No values to be produced")
+                    continue
 
-                wait = produce(
+                interval = produce(
                     producer,
                     args.output_type,
+                    args.kafka_topic,
+                    args.kafka_partition,
+                    args.kafka_key,
+                    row,
+                    loop_start + timedelta(seconds=interval * idx),
+                    interval,
+                    args.record_interval_field,
+                    interval_divisor,
                     args.incremental_field,
                     args.unique_alt_field,
-                    args.record_interval_field,
-                    divisor,
-                    args.kafka_topic,
-                    args.kafka_key,
-                    epoch,
-                    values[val_idx],
-                    args.kafka_partition,
                 )
-                val_idx = (val_idx + 1) % len(values)
+                row_idx = (row_idx + 1) % len(rows)
 
             if args.kafka_flush:
                 producer.flush()
 
-            if wait or args.rate_interval:
-                if args.rate_interval:
-                    wait = (
-                        args.rate_interval
-                        - (datetime.now(timezone.utc) - now).total_seconds()
-                    )
-                    wait = 0.0 if wait < 0 else wait
-
-                logging.info("Waiting for %f seconds...", wait)
-                time.sleep(wait)
+            wait = (interval * args.rate) - (
+                datetime.now(timezone.utc) - loop_start
+            ).total_seconds()
+            wait = 0.0 if wait < 0 else wait
+            time.sleep(wait)
 
     producer.flush()
     logging.info("Finished")

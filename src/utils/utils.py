@@ -20,7 +20,7 @@ def encode(value: dict | str, type: str):
     return value.encode("utf-8")
 
 
-def load_values(filepath: str, filetype: str) -> list[dict] | list[str]:
+def load_rows(filepath: str, filetype: str) -> list[dict] | list[str]:
     values = []
     if filetype == "bson":
         with open(filepath, "rb") as f:

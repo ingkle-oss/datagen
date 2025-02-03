@@ -13,6 +13,30 @@ from confluent_kafka import KafkaException, Producer
 from utils.nzfake import NZFaker, NZFakerEdge, NZFakerStore
 from utils.utils import encode
 
+
+REPORT_COUNT = 0
+
+
+def delivery_report(err, msg):
+    if err is not None:
+        logging.warning(f"Message delivery failed: {err}")
+        return
+
+    global REPORT_COUNT
+
+    if REPORT_COUNT >= args.kafka_report_interval:
+        REPORT_COUNT = 0
+        logging.info(
+            "Message delivered to error=%s topic=%s partition=%s offset=%s latency=%s",
+            msg.error(),
+            msg.topic(),
+            msg.partition(),
+            msg.offset(),
+            msg.latency(),
+        )
+    REPORT_COUNT += 1
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -88,7 +112,7 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
-        "--kafka-report--rate-interval",
+        "--kafka-report-interval",
         help="Kafka delivery report interval",
         type=int,
         default=10,
@@ -102,7 +126,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-key-vals",
+        "--custom-rows",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -111,31 +135,14 @@ if __name__ == "__main__":
     # Rate
     parser.add_argument(
         "--rate",
-        help="Number of records to be produced for each rate interval",
+        help="Number of records for each loop",
         type=int,
         default=1,
-    )
-    parser.add_argument(
-        "--rate-interval",
-        help="Rate interval in seconds",
-        type=float,
-        default=None,
-    )
-
-    # Timestamp options
-    parser.add_argument(
-        "--timestamp-start",
-        help="timestamp start in epoch seconds",
-        type=float,
-        default=None,  # now
     )
 
     # Record interval
     parser.add_argument(
-        "--record-interval",
-        help="timestamp difference in seconds",
-        type=float,
-        default=None,  # args.rate_interval/args.rate
+        "--record-interval", help="Record interval in seconds", type=float, default=1.0
     )
 
     # PostgreSQL
@@ -184,7 +191,7 @@ if __name__ == "__main__":
         default=None,
     )
 
-    # 3. else, default Faker
+    # 3. else, parameters for fake schema
     parser.add_argument(
         "--field-bool-count", help="Number of bool field", type=int, default=0
     )
@@ -217,7 +224,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--schema-update--rate-interval",
+        "--schema-update-interval",
         help="PostgreSQL update interval in seconds",
         type=int,
         default=30,
@@ -231,21 +238,12 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    timestamp_enabled = False
-    if any([args.timestamp_start, args.record_interval]):
-        if not all([args.timestamp_start, args.record_interval]):
-            raise ValueError(
-                (
-                    "Some timestamp options are not enough, "
-                    f"timestamp-start: {args.timestamp_start}, timestamp-diff: {args.record_interval}",
-                )
-            )
-        timestamp_enabled = True
-
-    custom_key_vals = {}
-    for kv in args.custom_key_vals:
+    custom_rows = {}
+    for kv in args.custom_rows:
         key, val = kv.split("=")
-        custom_key_vals[key] = val
+        custom_rows[key] = val
+
+    interval = args.record_interval
 
     if args.use_postgresql_store:
         if not all(
@@ -313,37 +311,6 @@ if __name__ == "__main__":
             str_cardinality=args.field_str_cardinality,
         )
 
-    REPORT_COUNT = 0
-    PREV_OFFSET = {}
-
-    def delivery_report(err, msg):
-        global REPORT_COUNT
-        global PREV_OFFSET
-
-        if err is not None:
-            logging.warning(f"Message delivery failed: {err}")
-            return
-
-        REPORT_COUNT += 1
-        if REPORT_COUNT >= args.kafka_report_interval:
-            REPORT_COUNT = 0
-            partition = msg.partition()
-            offset = msg.offset()
-            logging.info(
-                "Message delivered to error=%s topic=%s partition=%s offset=%s (delta=%s) latency=%s",
-                msg.error(),
-                msg.topic(),
-                msg.partition(),
-                offset,
-                (
-                    (offset - PREV_OFFSET[f"{partition}"])
-                    if f"{partition}" in PREV_OFFSET and offset is not None
-                    else 0
-                ),
-                msg.latency(),
-            )
-            PREV_OFFSET[f"{partition}"] = offset
-
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
     configs = {
@@ -382,59 +349,51 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
-    if timestamp_enabled:
-        timestamp_start = datetime.fromtimestamp(args.timestamp_start, timezone.utc)
-
     prev = datetime.now(timezone.utc)
     while True:
-        now = datetime.now(timezone.utc)
-
-        if (now - prev).total_seconds() > args.schema_update_interval:
+        if (
+            datetime.now(timezone.utc) - prev
+        ).total_seconds() > args.schema_update_interval:
             fake.update_schema()
-            prev = now
+            prev = datetime.now(timezone.utc)
 
-        if not fake.get_schema() and not custom_key_vals:
-            logging.warning("No schema found to be used")
-        else:
-            for idx in range(args.rate):
-                if timestamp_enabled:
-                    epoch = timestamp_start
-                    timestamp_start += timedelta(
-                        microseconds=args.record_interval * 1e6
-                    )
-                else:
-                    epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+        if not fake.get_schema() and not custom_rows:
+            logging.warning("No schema found to be used or no custom key values")
+            time.sleep(interval * args.rate)
+            continue
 
-                row = {
-                    "timestamp": int(epoch.timestamp() * 1e6),
-                    **custom_key_vals,
-                    **fake.values(),
-                }
+        loop_start = datetime.now(timezone.utc)
+        for idx in range(args.rate):
+            row = {
+                "timestamp": int(
+                    (loop_start + timedelta(seconds=interval * idx)).timestamp() * 1e6
+                ),
+                **custom_rows,
+                **fake.values(),
+            }
 
-                producer.poll(0)
-                try:
-                    producer.produce(
-                        topic=args.kafka_topic,
-                        value=encode(row, args.output_type),
-                        key=args.kafka_key.encode("utf-8") if args.kafka_key else None,
-                        partition=args.kafka_partition,
-                        on_delivery=delivery_report,
-                    )
-                except KafkaException as e:
-                    logging.error("KafkaException: %s", e)
+            producer.poll(0)
+            try:
+                producer.produce(
+                    topic=args.kafka_topic,
+                    value=encode(row, args.output_type),
+                    key=args.kafka_key.encode("utf-8") if args.kafka_key else None,
+                    partition=args.kafka_partition,
+                    on_delivery=delivery_report,
+                )
+            except KafkaException as e:
+                logging.error("KafkaException: %s", e)
 
-                logging.debug("Produced: %s:%s", args.kafka_key, row)
+            logging.debug("Produced: %s:%s", args.kafka_key, row)
 
-            if args.kafka_flush:
-                producer.flush()
+        if args.kafka_flush:
+            producer.flush()
 
-        if args.rate_interval:
-            wait = (
-                args.rate_interval - (datetime.now(timezone.utc) - now).total_seconds()
-            )
-            wait = 0.0 if wait < 0 else wait
-            logging.info("Waiting for %f seconds...", wait)
-            time.sleep(wait)
+        wait = (interval * args.rate) - (
+            datetime.now(timezone.utc) - loop_start
+        ).total_seconds()
+        wait = 0.0 if wait < 0 else wait
+        time.sleep(wait)
 
     producer.flush()
     logging.info("Finished")

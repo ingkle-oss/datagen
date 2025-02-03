@@ -135,7 +135,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--schema-update--rate-interval",
+        "--schema-update-interval",
         help="PostgreSQL update interval in seconds",
         type=int,
         default=30,
@@ -149,7 +149,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-key-vals",
+        "--custom-rows",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -162,11 +162,10 @@ if __name__ == "__main__":
         type=int,
         default=1,
     )
+
+    # Record interval
     parser.add_argument(
-        "--rate-interval",
-        help="Rate interval in seconds",
-        type=float,
-        default=None,
+        "--record-interval", help="Record interval in seconds", type=float, default=1.0
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -177,10 +176,12 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    custom_key_vals = {}
-    for kv in args.custom_key_vals:
+    custom_rows = {}
+    for kv in args.custom_rows:
         key, val = kv.split("=")
-        custom_key_vals[key] = val
+        custom_rows[key] = val
+
+    interval = args.record_interval
 
     if args.use_postgresql_store:
         if not all(
@@ -253,58 +254,53 @@ if __name__ == "__main__":
 
     prev = datetime.now(timezone.utc)
     while True:
-        now = datetime.now(timezone.utc)
-
-        if (now - prev).total_seconds() > args.schema_update_interval:
+        if (
+            datetime.now(timezone.utc) - prev
+        ).total_seconds() > args.schema_update_interval:
             fake.update_schema()
-            prev = now
+            prev = datetime.now(timezone.utc)
 
-        if not fake.get_schema() and not custom_key_vals:
-            logging.warning("No schema found to be used")
-        else:
-            records = []
-            for idx in range(args.rate):
-                values = fake.values()
-                if not values and not custom_key_vals:
-                    logging.debug("No values to be produced")
-                    continue
+        if not fake.get_schema() and not custom_rows:
+            logging.warning("No schema found to be used or no custom key values")
+            time.sleep(interval * args.rate)
+            continue
 
-                epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
+        records = []
+        loop_start = datetime.now(timezone.utc)
+        for idx in range(args.rate):
+            row = {
+                "timestamp": int(
+                    (loop_start + timedelta(seconds=interval * idx)).timestamp() * 1e6
+                ),
+                **custom_rows,
+                **fake.values(),
+            }
 
-                value = {
-                    "timestamp": int(epoch.timestamp() * 1e6),
-                    **custom_key_vals,
-                    **fake.values(),
-                }
+            if args.kafka_key is None:
+                record = dict(value=row, partition=args.kafka_partition)
+            else:
+                record = dict(
+                    key=args.kafka_key.encode("utf-8"),
+                    value=row,
+                    partition=args.kafka_partition,
+                )
+            records.append(record)
 
-                if args.kafka_key is None:
-                    record = dict(value=value, partition=args.kafka_partition)
-                else:
-                    record = dict(
-                        key=args.kafka_key.encode("utf-8"),
-                        value=value,
-                        partition=args.kafka_partition,
-                    )
+        res = requests.post(
+            url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
+            data=encode({"records": records}, args.output_type),
+            headers={"Content-Type": "application/vnd.kafka.json.v2+json"},
+            verify=args.redpanda_verify,
+        ).json()
+        logging.debug(encode({"records": records}, args.output_type))
+        logging.info(
+            f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
+        )
 
-                records.append(record)
-
-            res = requests.post(
-                url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
-                data=encode({"records": records}, args.output_type),
-                headers={"Content-Type": "application/vnd.kafka.json.v2+json"},
-                verify=args.redpanda_verify,
-            ).json()
-            logging.debug(encode({"records": records}, args.output_type))
-            logging.info(
-                f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
-            )
-
-        if args.rate_interval:
-            wait = (
-                args.rate_interval - (datetime.now(timezone.utc) - now).total_seconds()
-            )
-            wait = 0.0 if wait < 0 else wait
-            logging.info("Waiting for %f seconds...", wait)
-            time.sleep(wait)
+        wait = (interval * args.rate) - (
+            datetime.now(timezone.utc) - loop_start
+        ).total_seconds()
+        wait = 0.0 if wait < 0 else wait
+        time.sleep(wait)
 
     logging.info("Finished")
