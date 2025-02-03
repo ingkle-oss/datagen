@@ -149,7 +149,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--schema-update-interval",
+        "--schema-update--rate-interval",
         help="PostgreSQL update interval in seconds",
         type=int,
         default=30,
@@ -168,12 +168,17 @@ if __name__ == "__main__":
         nargs="*",
         default=[],
     )
+
+    # Rate
     parser.add_argument(
-        "--rate", help="Number of records in a group", type=int, default=1
+        "--rate",
+        help="Number of records to be published for each rate interval",
+        type=int,
+        default=1,
     )
     parser.add_argument(
         "--rate-interval",
-        help="Interval in seconds between groups",
+        help="Rate interval in seconds",
         type=float,
         default=None,
     )

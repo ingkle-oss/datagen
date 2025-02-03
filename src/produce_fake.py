@@ -88,7 +88,7 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
-        "--kafka-report-interval",
+        "--kafka-report--rate-interval",
         help="Kafka delivery report interval",
         type=int,
         default=10,
@@ -107,26 +107,35 @@ if __name__ == "__main__":
         nargs="*",
         default=[],
     )
+
+    # Rate
     parser.add_argument(
-        "--rate", help="Number of records in a group", type=int, default=1
+        "--rate",
+        help="Number of records to be produced for each rate interval",
+        type=int,
+        default=1,
     )
     parser.add_argument(
         "--rate-interval",
-        help="Interval in seconds between groups",
+        help="Rate interval in seconds",
         type=float,
         default=None,
     )
+
+    # Timestamp options
     parser.add_argument(
         "--timestamp-start",
         help="timestamp start in epoch seconds",
         type=float,
-        default=None,
+        default=None,  # now
     )
+
+    # Record interval
     parser.add_argument(
-        "--timestamp-diff",
+        "--record-interval",
         help="timestamp difference in seconds",
         type=float,
-        default=None,
+        default=None,  # args.rate_interval/args.rate
     )
 
     # PostgreSQL
@@ -208,7 +217,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--schema-update-interval",
+        "--schema-update--rate-interval",
         help="PostgreSQL update interval in seconds",
         type=int,
         default=30,
@@ -223,12 +232,12 @@ if __name__ == "__main__":
     )
 
     timestamp_enabled = False
-    if any([args.timestamp_start, args.timestamp_diff]):
-        if not all([args.timestamp_start, args.timestamp_diff]):
+    if any([args.timestamp_start, args.record_interval]):
+        if not all([args.timestamp_start, args.record_interval]):
             raise ValueError(
                 (
                     "Some timestamp options are not enough, "
-                    f"timestamp-start: {args.timestamp_start}, timestamp-diff: {args.timestamp_diff}",
+                    f"timestamp-start: {args.timestamp_start}, timestamp-diff: {args.record_interval}",
                 )
             )
         timestamp_enabled = True
@@ -390,7 +399,9 @@ if __name__ == "__main__":
             for idx in range(args.rate):
                 if timestamp_enabled:
                     epoch = timestamp_start
-                    timestamp_start += timedelta(microseconds=args.timestamp_diff * 1e6)
+                    timestamp_start += timedelta(
+                        microseconds=args.record_interval * 1e6
+                    )
                 else:
                     epoch = now + timedelta(microseconds=idx * (1000000 / args.rate))
 

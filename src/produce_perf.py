@@ -96,26 +96,35 @@ if __name__ == "__main__":
         nargs="*",
         default=[],
     )
+
+    # Rate
     parser.add_argument(
-        "--rate", help="Number of records in a group", type=int, default=1
+        "--rate",
+        help="Number of records to be produced for each rate interval",
+        type=int,
+        default=1,
     )
     parser.add_argument(
         "--rate-interval",
-        help="Interval in seconds between groups",
+        help="Rate interval in seconds",
         type=float,
         default=None,
     )
+
+    # Timestamp options
     parser.add_argument(
         "--timestamp-start",
         help="timestamp start in epoch seconds",
         type=float,
-        required=True,
+        default=None,  # now
     )
+
+    # Record interval
     parser.add_argument(
-        "--timestamp-diff",
+        "--record-interval",
         help="timestamp difference in seconds",
         type=float,
-        required=True,
+        default=None,  # args.rate_interval/args.rate
     )
 
     # File
@@ -227,7 +236,7 @@ if __name__ == "__main__":
                 }
             )
             val_idx = (val_idx + 1) % len(values)
-            timestamp_start += timedelta(microseconds=args.timestamp_diff * 1e6)
+            timestamp_start += timedelta(microseconds=args.record_interval * 1e6)
 
         start = perf_counter()
         producer.poll(0)

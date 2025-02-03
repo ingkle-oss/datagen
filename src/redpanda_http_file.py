@@ -142,16 +142,35 @@ if __name__ == "__main__":
         nargs="*",
         default=[],
     )
+
+    # Rate
     parser.add_argument(
-        "--rate", help="Number of records in a group", type=int, default=1
+        "--rate",
+        help="Number of records to be posted for each rate interval",
+        type=int,
+        default=1,
     )
     parser.add_argument(
         "--rate-interval",
-        help="Interval in seconds between groups",
+        help="Rate interval in seconds",
         type=float,
         default=None,
     )
 
+    # Record interval
+    parser.add_argument(
+        "--record-interval-field-from",
+        help="Interval field (float) between records",
+        default=None,
+    )
+    parser.add_argument(
+        "--record-interval-field-from-unit",
+        help="Interval field unit",
+        choices=["second", "microsecond", "millisecond", "nanosecond"],
+        default=None,
+    )
+
+    # Field options
     parser.add_argument(
         "--incremental-field",
         help="Incremental field (int) from 0",
@@ -160,15 +179,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--unique-alt-field",
         help="Use unique values for alternative field (float type)",
-        default=None,
-    )
-    parser.add_argument(
-        "--interval-field", help="Interval field (float) between records", default=None
-    )
-    parser.add_argument(
-        "--interval-field-unit",
-        help="Interval field unit",
-        choices=["second", "microsecond", "millisecond", "nanosecond"],
         default=None,
     )
 

@@ -185,7 +185,7 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
-        "--kafka-report-interval",
+        "--kafka-report--rate-interval",
         help="Kafka delivery report interval",
         type=int,
         default=10,
@@ -228,25 +228,44 @@ if __name__ == "__main__":
         default=[],
     )
 
+    # Rate
     parser.add_argument(
-        "--rate", help="Number of records in a group", type=int, default=1
+        "--rate",
+        help="Number of records to be produced for each rate interval",
+        type=int,
+        default=1,
     )
     parser.add_argument(
         "--rate-interval",
-        help="Interval in seconds between groups",
+        help="Rate interval in seconds",
         type=float,
         default=None,
     )
+
+    # Timestamp options
     parser.add_argument(
         "--timestamp-start",
         help="timestamp start in epoch seconds",
         type=float,
+        default=None,  # now
+    )
+
+    # Record interval
+    parser.add_argument(
+        "--record-interval",
+        help="timestamp difference in seconds",
+        type=float,
+        default=None,  # args.rate_interval/args.rate
+    )
+    parser.add_argument(
+        "--record-interval-field-from",
+        help="Interval field (float) between records",
         default=None,
     )
     parser.add_argument(
-        "--timestamp-diff",
-        help="timestamp difference in seconds",
-        type=float,
+        "--record-interval-field-from-unit",
+        help="Interval field unit",
+        choices=["second", "microsecond", "millisecond", "nanosecond"],
         default=None,
     )
 
@@ -261,15 +280,6 @@ if __name__ == "__main__":
         help="Use unique values for alternative field (float type)",
         default=None,
     )
-    parser.add_argument(
-        "--interval-field", help="Interval field (float) between records", default=None
-    )
-    parser.add_argument(
-        "--interval-field-unit",
-        help="Interval field unit",
-        choices=["second", "microsecond", "millisecond", "nanosecond"],
-        default=None,
-    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -280,12 +290,12 @@ if __name__ == "__main__":
     )
 
     timestamp_enabled = False
-    if any([args.timestamp_start, args.timestamp_diff]):
-        if not all([args.timestamp_start, args.timestamp_diff]):
+    if any([args.timestamp_start, args.record_interval]):
+        if not all([args.timestamp_start, args.record_interval]):
             raise ValueError(
                 (
                     "Some timestamp options are not enough, "
-                    f"timestamp-start: {args.timestamp_start}, timestamp-diff: {args.timestamp_diff}",
+                    f"timestamp-start: {args.timestamp_start}, timestamp-diff: {args.record_interval}",
                 )
             )
         timestamp_enabled = True
@@ -337,7 +347,9 @@ if __name__ == "__main__":
     divisor = 1.0
     if args.interval_field:
         if timestamp_enabled:
-            raise RuntimeError("Cannot use --interval-field with --timestamp-start")
+            raise RuntimeError(
+                "Cannot use --record-interval-field-from with --timestamp-start"
+            )
 
         if args.interval_field_unit == "second":
             pass
@@ -351,7 +363,7 @@ if __name__ == "__main__":
             raise RuntimeError(
                 "Invalid interval field unit: %s" % args.interval_field_unit
             )
-        logging.info("Ignores --rate and --rate-interval options...")
+        logging.info("Ignores --rate and ---rate-interval options...")
         rate = 1
 
     filepath = args.filepath
@@ -384,7 +396,7 @@ if __name__ == "__main__":
                     if timestamp_enabled:
                         epoch = timestamp_start
                         timestamp_start += timedelta(
-                            microseconds=args.timestamp_diff * 1e6
+                            microseconds=args.record_interval * 1e6
                         )
                     else:
                         epoch = now + timedelta(microseconds=idx * (1000000 / rate))
@@ -450,7 +462,9 @@ if __name__ == "__main__":
             for idx in range(rate):
                 if timestamp_enabled:
                     epoch = timestamp_start
-                    timestamp_start += timedelta(microseconds=args.timestamp_diff * 1e6)
+                    timestamp_start += timedelta(
+                        microseconds=args.record_interval * 1e6
+                    )
                 else:
                     epoch = now + timedelta(microseconds=idx * (1000000 / rate))
 
