@@ -18,7 +18,7 @@ from utils.utils import download_s3file, encode, load_values
 def create_record(
     incremental_field: str,
     unique_alt_field: str,
-    interval_field: str,
+    record_interval_field: str,
     interval_divisor: float,
     kafka_partition: str,
     key: str | None,
@@ -44,8 +44,8 @@ def create_record(
         values[unique_alt_field] = UNIQUE_ALT_IDX
 
     wait = None
-    if interval_field and interval_field in values:
-        wait = values[interval_field] / interval_divisor
+    if record_interval_field and record_interval_field in values:
+        wait = values[record_interval_field] / interval_divisor
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
@@ -159,12 +159,12 @@ if __name__ == "__main__":
 
     # Record interval
     parser.add_argument(
-        "--record-interval-field-from",
+        "--record-interval-field",
         help="Interval field (float) between records",
         default=None,
     )
     parser.add_argument(
-        "--record-interval-field-from-unit",
+        "--record-interval-field-unit",
         help="Interval field unit",
         choices=["second", "microsecond", "millisecond", "nanosecond"],
         default=None,
@@ -206,18 +206,18 @@ if __name__ == "__main__":
 
     rate = args.rate
     divisor = 1.0
-    if args.interval_field:
-        if args.interval_field_unit == "second":
+    if args.record_interval_field:
+        if args.record_interval_field_unit == "second":
             pass
-        elif args.interval_field_unit == "millisecond":
+        elif args.record_interval_field_unit == "millisecond":
             divisor = 1e3
-        elif args.interval_field_unit == "microsecond":
+        elif args.record_interval_field_unit == "microsecond":
             divisor = 1e6
-        elif args.interval_field_unit == "nanosecond":
+        elif args.record_interval_field_unit == "nanosecond":
             divisor = 1e9
         else:
             raise RuntimeError(
-                "Invalid interval field unit: %s" % args.interval_field_unit
+                "Invalid interval field unit: %s" % args.record_interval_field_unit
             )
         logging.info("Ignores --rate option...")
         rate = 1
@@ -266,7 +266,7 @@ if __name__ == "__main__":
                     record, wait = create_record(
                         args.incremental_field,
                         args.unique_alt_field,
-                        args.interval_field,
+                        args.record_interval_field,
                         divisor,
                         args.kafka_partition,
                         args.kafka_key,
@@ -321,7 +321,7 @@ if __name__ == "__main__":
                 record, wait = create_record(
                     args.incremental_field,
                     args.unique_alt_field,
-                    args.interval_field,
+                    args.record_interval_field,
                     divisor,
                     args.kafka_partition,
                     args.kafka_key,
