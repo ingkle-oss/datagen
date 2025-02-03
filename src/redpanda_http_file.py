@@ -226,9 +226,10 @@ if __name__ == "__main__":
 
             body_start = f.tell()
             while True:
+                elapsed = 0
                 records = []
                 loop_start = datetime.now(timezone.utc)
-                for idx in range(args.rate):
+                for _ in range(args.rate):
                     line = f.readline()
                     if not line:
                         f.seek(body_start)
@@ -255,7 +256,7 @@ if __name__ == "__main__":
                         args.kafka_partition,
                         args.kafka_key,
                         row,
-                        loop_start + timedelta(seconds=interval * idx),
+                        loop_start + timedelta(seconds=elapsed),
                         interval,
                         args.record_interval_field,
                         interval_divisor,
@@ -263,6 +264,7 @@ if __name__ == "__main__":
                         args.unique_alt_field,
                     )
                     records.append(record)
+                    elapsed += interval
 
                 res = requests.post(
                     url=(
@@ -280,9 +282,9 @@ if __name__ == "__main__":
                     f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
                 )
 
-                wait = (interval * args.rate) - (
-                    datetime.now(timezone.utc) - loop_start
-                ).total_seconds()
+                wait = (
+                    elapsed - (datetime.now(timezone.utc) - loop_start).total_seconds()
+                )
                 wait = 0.0 if wait < 0 else wait
                 time.sleep(wait)
 
@@ -296,9 +298,10 @@ if __name__ == "__main__":
 
         row_idx = 0
         while True:
+            elapsed = 0
             records = []
             loop_start = datetime.now(timezone.utc)
-            for idx in range(args.rate):
+            for _ in range(args.rate):
                 row = {
                     **custom_rows,
                     **rows[row_idx],
@@ -311,7 +314,7 @@ if __name__ == "__main__":
                     args.kafka_partition,
                     args.kafka_key,
                     row,
-                    loop_start + timedelta(seconds=interval * idx),
+                    loop_start + timedelta(seconds=elapsed),
                     interval,
                     args.record_interval_field,
                     interval_divisor,
@@ -319,6 +322,7 @@ if __name__ == "__main__":
                     args.unique_alt_field,
                 )
                 records.append(record)
+                elapsed += interval
                 row_idx = (row_idx + 1) % len(rows)
 
             res = requests.post(
@@ -338,9 +342,7 @@ if __name__ == "__main__":
                 f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
             )
 
-            wait = (interval * args.rate) - (
-                datetime.now(timezone.utc) - loop_start
-            ).total_seconds()
+            wait = elapsed - (datetime.now(timezone.utc) - loop_start).total_seconds()
             wait = 0.0 if wait < 0 else wait
             time.sleep(wait)
 

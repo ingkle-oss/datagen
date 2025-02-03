@@ -265,12 +265,13 @@ if __name__ == "__main__":
             time.sleep(interval * args.rate)
             continue
 
+        elapsed = 0
         records = []
         loop_start = datetime.now(timezone.utc)
-        for idx in range(args.rate):
+        for _ in range(args.rate):
             row = {
                 "timestamp": int(
-                    (loop_start + timedelta(seconds=interval * idx)).timestamp() * 1e6
+                    (loop_start + timedelta(seconds=elapsed)).timestamp() * 1e6
                 ),
                 **custom_rows,
                 **fake.values(),
@@ -285,6 +286,7 @@ if __name__ == "__main__":
                     partition=args.kafka_partition,
                 )
             records.append(record)
+            elapsed += interval
 
         res = requests.post(
             url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
@@ -297,9 +299,7 @@ if __name__ == "__main__":
             f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
         )
 
-        wait = (interval * args.rate) - (
-            datetime.now(timezone.utc) - loop_start
-        ).total_seconds()
+        wait = elapsed - (datetime.now(timezone.utc) - loop_start).total_seconds()
         wait = 0.0 if wait < 0 else wait
         time.sleep(wait)
 

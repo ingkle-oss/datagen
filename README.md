@@ -18,13 +18,13 @@ Run Kafka producer
 
 ```bash
 # Produce fake data
-python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0 --kafka-report--rate-interval 1
+python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0 --kafka-report-interval 1
 
 # Produce fake data by using predefined fields schema
- python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0--kafka-report--rate-interval 1 --use-postgresql-store --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-store-table-name SCHEMA_TABLE_NAME
+ python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0--kafka-report-interval 1 --use-postgresql-store --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-store-table-name SCHEMA_TABLE_NAME
 
  # Produce fake data by using predefined edge schema
- python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0--kafka-report--rate-interval 1 --use-postgresql-edge --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-edge-id EDGE_ID
+ python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0--kafka-report-interval 1 --use-postgresql-edge --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-edge-id EDGE_ID
 
 # Produce a file
 python3 src/produce_file.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --filepath ./samples/loop.jsonl
@@ -53,7 +53,7 @@ python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-u
 
 ```bash
 # Produce fake data
-docker run --rm -it ingkle/datagen python3 produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0 --kafka-report--rate-interval 1
+docker run --rm -it ingkle/datagen python3 produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0 --kafka-report-interval 1
 ```
 
 ## Run on K8s

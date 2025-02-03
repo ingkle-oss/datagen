@@ -362,11 +362,12 @@ if __name__ == "__main__":
             time.sleep(interval * args.rate)
             continue
 
+        elapsed = 0
         loop_start = datetime.now(timezone.utc)
-        for idx in range(args.rate):
+        for _ in range(args.rate):
             row = {
                 "timestamp": int(
-                    (loop_start + timedelta(seconds=interval * idx)).timestamp() * 1e6
+                    (loop_start + timedelta(seconds=elapsed)).timestamp() * 1e6
                 ),
                 **custom_rows,
                 **fake.values(),
@@ -381,17 +382,17 @@ if __name__ == "__main__":
                     partition=args.kafka_partition,
                     on_delivery=delivery_report,
                 )
+                logging.debug(row)
+                logging.debug("Produced: %s:%s", args.kafka_key, row)
             except KafkaException as e:
                 logging.error("KafkaException: %s", e)
 
-            logging.debug("Produced: %s:%s", args.kafka_key, row)
+            elapsed += interval
 
         if args.kafka_flush:
             producer.flush()
 
-        wait = (interval * args.rate) - (
-            datetime.now(timezone.utc) - loop_start
-        ).total_seconds()
+        wait = elapsed - (datetime.now(timezone.utc) - loop_start).total_seconds()
         wait = 0.0 if wait < 0 else wait
         time.sleep(wait)
 
