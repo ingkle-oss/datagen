@@ -382,7 +382,6 @@ if __name__ == "__main__":
                     partition=args.kafka_partition,
                     on_delivery=delivery_report,
                 )
-                logging.debug(row)
                 logging.debug("Produced: %s:%s", args.kafka_key, row)
             except KafkaException as e:
                 logging.error("KafkaException: %s", e)

@@ -91,10 +91,9 @@ def produce(
             partition=partition,
             on_delivery=delivery_report,
         )
+        logging.debug("Produced: %s:%s", args.kafka_key, row)
     except KafkaException as e:
         logging.error("KafkaException: %s", e)
-
-    logging.debug("Produced: %s:%s", args.kafka_key, row)
 
     return interval
 

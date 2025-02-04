@@ -21,6 +21,7 @@ def encode(value: dict | str, type: str):
 
 
 def load_rows(filepath: str, filetype: str) -> list[dict] | list[str]:
+    logging.info("Loading file [%s] %s...", filetype, filepath)
     values = []
     if filetype == "bson":
         with open(filepath, "rb") as f:
@@ -38,6 +39,7 @@ def load_rows(filepath: str, filetype: str) -> list[dict] | list[str]:
                             value[k] = float(v)
             else:
                 values = f.readlines()
+    logging.info("Loaded %s rows", len(values))
 
     return values
 

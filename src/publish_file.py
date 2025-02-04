@@ -81,8 +81,9 @@ def publish(
             qos=qos,
         )
         ret.wait_for_publish()
-        logging.debug(row)
-        logging.debug("Published mid: %s, return code: %s", ret.mid, ret.rc)
+        logging.debug(
+            "Published mid: %s, return code: %s, row: %s", ret.mid, ret.rc, row
+        )
     except RuntimeError as e:
         logging.error("RuntimeError: %s", e)
 
