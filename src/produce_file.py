@@ -4,6 +4,9 @@
 # https://github.com/confluentinc/confluent-kafka-python/tree/master/examples
 
 
+from collections.abc import Callable
+
+import ast
 import argparse
 import json
 import logging
@@ -58,6 +61,8 @@ def produce(
     incremental_field_step: int,
     datetime_field: str,
     datetime_field_format: str,
+    eval_field: str,
+    eval_func: Callable,
 ) -> float:
     global INCREMENTAL_IDX
 
@@ -78,6 +83,11 @@ def produce(
 
     if datetime_field and datetime_field_format:
         values[datetime_field] = epoch.strftime(datetime_field_format)
+
+    if eval_field and eval_func:
+        values[eval_field] = eval_func(
+            **values,
+        )
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
@@ -259,6 +269,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--datetime-field-format", help="Datetime format", default="%Y-%m-%d %H:%M:%S"
     )
+    parser.add_argument("--eval-field", help="Evaluated field")
+    parser.add_argument("--eval-field-expr", help="Evaluated field expression")
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -291,6 +303,17 @@ if __name__ == "__main__":
         logging.info("Ignores ---interval")
 
     INCREMENTAL_IDX = args.incremental_field_from
+
+    eval_func = None
+    if args.eval_field and args.eval_field_expr:
+        fields = [
+            node.id
+            for node in ast.walk(ast.parse(args.eval_field_expr))
+            if isinstance(node, ast.Name)
+        ]
+        eval_func = eval(
+            "lambda " + ",".join(fields) + ",**kwargs" + ": " + args.eval_field_expr
+        )
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):
@@ -390,6 +413,8 @@ if __name__ == "__main__":
                         args.incremental_field_step,
                         args.datetime_field,
                         args.datetime_field_format,
+                        args.eval_field,
+                        eval_func,
                     )
                     elapsed += interval
 
@@ -436,6 +461,8 @@ if __name__ == "__main__":
                     args.incremental_field_step,
                     args.datetime_field,
                     args.datetime_field_format,
+                    args.eval_field,
+                    eval_func,
                 )
                 elapsed += interval
                 row_idx = (row_idx + 1) % len(rows)
