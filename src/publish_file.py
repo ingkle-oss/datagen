@@ -46,6 +46,8 @@ def publish(
     interval_field_diff: str,
     incremental_field: str,
     incremental_field_step: int,
+    datetime_field: str,
+    datetime_field_format: str,
 ) -> float:
     global INCREMENTAL_IDX
 
@@ -61,9 +63,12 @@ def publish(
             print(interval_diff, INTERVAL_DIFF_PREV, interval)
         INTERVAL_DIFF_PREV = interval_diff
 
-    if incremental_field and incremental_field in values:
+    if incremental_field:
         values[incremental_field] = INCREMENTAL_IDX
         INCREMENTAL_IDX += incremental_field_step
+
+    if datetime_field and datetime_field_format:
+        values[datetime_field] = epoch.strftime(datetime_field_format)
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
@@ -204,6 +209,10 @@ if __name__ == "__main__":
         type=int,
         default=1,
     )
+    parser.add_argument("--datetime-field", help="Datetime field (datetime)")
+    parser.add_argument(
+        "--datetime-field-format", help="Datetime format", default="%Y-%m-%d %H:%M:%S"
+    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -330,6 +339,8 @@ if __name__ == "__main__":
                             args.interval_field_diff,
                             args.incremental_field,
                             args.incremental_field_step,
+                            args.datetime_field,
+                            args.datetime_field_format,
                         )
                         elapsed += interval
 
@@ -376,6 +387,8 @@ if __name__ == "__main__":
                         args.interval_field_diff,
                         args.incremental_field,
                         args.incremental_field_step,
+                        args.datetime_field,
+                        args.datetime_field_format,
                     )
                     elapsed += interval
                     row_idx = (row_idx + 1) % len(rows)
