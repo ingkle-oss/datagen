@@ -15,10 +15,6 @@ from fastnumbers import check_float
 
 from utils.utils import download_s3file, encode, load_rows
 
-INCREMENTAL_IDX = 0
-UNIQUE_ALT_PREV_VALUE = None
-UNIQUE_ALT_IDX = -1
-
 REPORT_COUNT = 0
 
 
@@ -42,6 +38,9 @@ def delivery_report(err, msg):
     REPORT_COUNT += 1
 
 
+INCREMENTAL_IDX = 0
+
+
 def produce(
     producer: Producer,
     output_type: str,
@@ -54,25 +53,15 @@ def produce(
     interval_field: str,
     interval_divisor: float,
     incremental_field: str,
-    unique_alt_field: str,
+    incremental_field_step: int,
 ) -> float:
     global INCREMENTAL_IDX
-    global UNIQUE_ALT_PREV_VALUE
-    global UNIQUE_ALT_IDX
 
     values = {k: v for k, v in values.items() if v is not None}
 
     if incremental_field and incremental_field in values:
         values[incremental_field] = INCREMENTAL_IDX
-        INCREMENTAL_IDX += 1
-
-    if unique_alt_field and unique_alt_field in values:
-        if (UNIQUE_ALT_PREV_VALUE is None) or (
-            UNIQUE_ALT_PREV_VALUE != values[unique_alt_field]
-        ):
-            UNIQUE_ALT_PREV_VALUE = values[unique_alt_field]
-            UNIQUE_ALT_IDX += 1
-        values[unique_alt_field] = UNIQUE_ALT_IDX
+        INCREMENTAL_IDX += incremental_field_step
 
     if interval_field and interval_field in values:
         interval = values[interval_field] / interval_divisor
@@ -236,10 +225,18 @@ if __name__ == "__main__":
     )
 
     # Other field options
-    parser.add_argument("--incremental-field", help="Incremental field (int) from 0")
+    parser.add_argument("--incremental-field", help="Incremental field (int)")
     parser.add_argument(
-        "--unique-alt-field",
-        help="Use unique values for alternative field (float type)",
+        "--incremental-field-from",
+        help="Incremental field start value",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--incremental-field-step",
+        help="Incremental field step value",
+        type=int,
+        default=1,
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -256,7 +253,6 @@ if __name__ == "__main__":
         custom_rows[key] = row
 
     interval = args.interval
-
     interval_divisor = 1.0
     if args.interval_field:
         if args.interval_field_unit == "second":
@@ -272,6 +268,8 @@ if __name__ == "__main__":
                 "Invalid interval field unit: %s", args.interval_field_unit
             )
         logging.info("Ignores ---interval")
+
+    INCREMENTAL_IDX = args.incremental_field_from
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):
@@ -367,7 +365,7 @@ if __name__ == "__main__":
                         args.interval_field,
                         interval_divisor,
                         args.incremental_field,
-                        args.unique_alt_field,
+                        args.incremental_field_step,
                     )
                     elapsed += interval
 
@@ -410,7 +408,7 @@ if __name__ == "__main__":
                     args.interval_field,
                     interval_divisor,
                     args.incremental_field,
-                    args.unique_alt_field,
+                    args.incremental_field_step,
                 )
                 elapsed += interval
                 row_idx = (row_idx + 1) % len(rows)
