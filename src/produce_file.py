@@ -4,19 +4,17 @@
 # https://github.com/confluentinc/confluent-kafka-python/tree/master/examples
 
 
-from collections.abc import Callable
-
-import ast
 import argparse
 import json
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 from confluent_kafka import KafkaException, Producer
 from fastnumbers import check_float
 
-from utils.utils import download_s3file, encode, load_rows
+from utils.utils import download_s3file, encode, eval_create_func, load_rows
 
 REPORT_COUNT = 0
 
@@ -306,14 +304,7 @@ if __name__ == "__main__":
 
     eval_func = None
     if args.eval_field and args.eval_field_expr:
-        fields = [
-            node.id
-            for node in ast.walk(ast.parse(args.eval_field_expr))
-            if isinstance(node, ast.Name)
-        ]
-        eval_func = eval(
-            "lambda " + ",".join(fields) + ",**kwargs" + ": " + args.eval_field_expr
-        )
+        eval_func = eval_create_func(args.eval_field_expr)
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):

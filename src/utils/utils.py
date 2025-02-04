@@ -1,7 +1,9 @@
+import ast
 import csv
 import json
 import logging
 import os
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 import boto3
@@ -78,3 +80,12 @@ def download_s3file(filepath: str, accesskey: str, secretkey: str, endpoint: str
     logging.info("Download completed... %s", _filepath)
 
     return _filepath
+
+
+def eval_create_func(eval_field_expr: str) -> Callable:
+    fields = [
+        node.id
+        for node in ast.walk(ast.parse(eval_field_expr))
+        if isinstance(node, ast.Name)
+    ]
+    return eval("lambda " + ",".join(fields) + ",**kwargs" + ": " + eval_field_expr)

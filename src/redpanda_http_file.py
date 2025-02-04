@@ -6,13 +6,17 @@ import argparse
 import json
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 import requests
 from fastnumbers import check_float
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from utils.utils import download_s3file, encode, load_rows
+from utils.utils import download_s3file, encode, eval_create_func, load_rows
+
+INCREMENTAL_IDX = 0
+INTERVAL_DIFF_PREV = None
 
 
 def create_record(
@@ -22,30 +26,39 @@ def create_record(
     epoch: datetime,
     interval: float,
     interval_field: str,
-    interval_divisor: float,
+    interval_field_divisor: float,
+    interval_field_diff: str,
     incremental_field: str,
-    unique_alt_field: str,
+    incremental_field_step: int,
+    datetime_field: str,
+    datetime_field_format: str,
+    eval_field: str,
+    eval_func: Callable,
 ) -> tuple[dict, float]:
     global INCREMENTAL_IDX
-    global UNIQUE_ALT_PREV_VALUE
-    global UNIQUE_ALT_IDX
 
     values = {k: v for k, v in values.items() if v is not None}
 
-    if incremental_field and incremental_field in values:
-        values[incremental_field] = INCREMENTAL_IDX
-        INCREMENTAL_IDX += 1
-
-    if unique_alt_field and unique_alt_field in values:
-        if (UNIQUE_ALT_PREV_VALUE is None) or (
-            UNIQUE_ALT_PREV_VALUE != values[unique_alt_field]
-        ):
-            UNIQUE_ALT_PREV_VALUE = values[unique_alt_field]
-            UNIQUE_ALT_IDX += 1
-        values[unique_alt_field] = UNIQUE_ALT_IDX
-
     if interval_field and interval_field in values:
-        interval = values[interval_field] / interval_divisor
+        interval = values[interval_field] / interval_field_divisor
+    elif interval_field_diff and interval_field_diff in values:
+        global INTERVAL_DIFF_PREV
+        interval_diff = datetime.fromisoformat((values[interval_field_diff]))
+        if INTERVAL_DIFF_PREV:
+            interval = (interval_diff - INTERVAL_DIFF_PREV).total_seconds()
+        INTERVAL_DIFF_PREV = interval_diff
+
+    if incremental_field:
+        values[incremental_field] = INCREMENTAL_IDX
+        INCREMENTAL_IDX += incremental_field_step
+
+    if datetime_field and datetime_field_format:
+        values[datetime_field] = epoch.strftime(datetime_field_format)
+
+    if eval_field and eval_func:
+        values[eval_field] = eval_func(
+            **values,
+        )
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
@@ -155,7 +168,11 @@ if __name__ == "__main__":
         "--interval", help="Record interval in seconds", type=float, default=1.0
     )
     parser.add_argument(
-        "--interval-field", help="Interval field (float) between records"
+        "--interval-field", help="Use field(float) value as interval between records"
+    )
+    parser.add_argument(
+        "--interval-field-diff",
+        help="Use field(datetime) difference as interval between records",
     )
     parser.add_argument(
         "--interval-field-unit",
@@ -164,11 +181,25 @@ if __name__ == "__main__":
     )
 
     # Other field options
-    parser.add_argument("--incremental-field", help="Incremental field (int) from 0")
+    parser.add_argument("--incremental-field", help="Incremental field (int)")
     parser.add_argument(
-        "--unique-alt-field",
-        help="Use unique values for alternative field (float type)",
+        "--incremental-field-from",
+        help="Incremental field start value",
+        type=int,
+        default=0,
     )
+    parser.add_argument(
+        "--incremental-field-step",
+        help="Incremental field step value",
+        type=int,
+        default=1,
+    )
+    parser.add_argument("--datetime-field", help="Datetime field (datetime)")
+    parser.add_argument(
+        "--datetime-field-format", help="Datetime format", default="%Y-%m-%d %H:%M:%S"
+    )
+    parser.add_argument("--eval-field", help="Evaluated field")
+    parser.add_argument("--eval-field-expr", help="Evaluated field expression")
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -184,22 +215,27 @@ if __name__ == "__main__":
         custom_rows[key] = val
 
     interval = args.interval
-
-    interval_divisor = 1.0
+    interval_field_divisor = 1.0
     if args.interval_field:
         if args.interval_field_unit == "second":
             pass
         elif args.interval_field_unit == "millisecond":
-            interval_divisor = 1e3
+            interval_field_divisor = 1e3
         elif args.interval_field_unit == "microsecond":
-            interval_divisor = 1e6
+            interval_field_divisor = 1e6
         elif args.interval_field_unit == "nanosecond":
-            interval_divisor = 1e9
+            interval_field_divisor = 1e9
         else:
             raise RuntimeError(
                 "Invalid interval field unit: %s", args.interval_field_unit
             )
         logging.info("Ignores ---interval")
+
+    INCREMENTAL_IDX = args.incremental_field_from
+
+    eval_func = None
+    if args.eval_field and args.eval_field_expr:
+        eval_func = eval_create_func(args.eval_field_expr)
 
     filepath = args.filepath
     if filepath.startswith("s3a://"):
@@ -209,10 +245,6 @@ if __name__ == "__main__":
 
     requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
     scheme = "https" if args.redpanda_ssl else "http"
-
-    INCREMENTAL_IDX = 0
-    UNIQUE_ALT_PREV_VALUE = None
-    UNIQUE_ALT_IDX = -1
 
     # For bigfile, load file one by one
     if args.bigfile:
@@ -259,9 +291,14 @@ if __name__ == "__main__":
                         loop_start + timedelta(seconds=elapsed),
                         interval,
                         args.interval_field,
-                        interval_divisor,
+                        interval_field_divisor,
+                        args.interval_field_diff,
                         args.incremental_field,
-                        args.unique_alt_field,
+                        args.incremental_field_step,
+                        args.datetime_field,
+                        args.datetime_field_format,
+                        args.eval_field,
+                        eval_func,
                     )
                     records.append(record)
                     elapsed += interval
@@ -317,9 +354,14 @@ if __name__ == "__main__":
                     loop_start + timedelta(seconds=elapsed),
                     interval,
                     args.interval_field,
-                    interval_divisor,
+                    interval_field_divisor,
+                    args.interval_field_diff,
                     args.incremental_field,
-                    args.unique_alt_field,
+                    args.incremental_field_step,
+                    args.datetime_field,
+                    args.datetime_field_format,
+                    args.eval_field,
+                    eval_func,
                 )
                 records.append(record)
                 elapsed += interval
