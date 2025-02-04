@@ -42,7 +42,8 @@ def publish(
     epoch: datetime,
     interval: float,
     interval_field: str,
-    interval_divisor: float,
+    interval_field_divisor: float,
+    interval_field_diff: str,
     incremental_field: str,
     incremental_field_step: int,
 ) -> float:
@@ -50,12 +51,19 @@ def publish(
 
     values = {k: v for k, v in values.items() if v is not None}
 
+    if interval_field and interval_field in values:
+        interval = values[interval_field] / interval_field_divisor
+    elif interval_field_diff and interval_field_diff in values:
+        global INTERVAL_DIFF_PREV
+        interval_diff = datetime.fromisoformat((values[interval_field_diff]))
+        if INTERVAL_DIFF_PREV:
+            interval = (interval_diff - INTERVAL_DIFF_PREV).total_seconds()
+            print(interval_diff, INTERVAL_DIFF_PREV, interval)
+        INTERVAL_DIFF_PREV = interval_diff
+
     if incremental_field and incremental_field in values:
         values[incremental_field] = INCREMENTAL_IDX
         INCREMENTAL_IDX += incremental_field_step
-
-    if interval_field and interval_field in values:
-        interval = values[interval_field] / interval_divisor
 
     row = {
         "timestamp": int(epoch.timestamp() * 1e6),
@@ -170,7 +178,11 @@ if __name__ == "__main__":
         "--interval", help="Record interval in seconds", type=float, default=1.0
     )
     parser.add_argument(
-        "--interval-field", help="Interval field (float) between records"
+        "--interval-field", help="Use field(float) value as interval between records"
+    )
+    parser.add_argument(
+        "--interval-field-diff",
+        help="Use field(datetime) difference as interval between records",
     )
     parser.add_argument(
         "--interval-field-unit",
@@ -207,16 +219,16 @@ if __name__ == "__main__":
         custom_rows[key] = row
 
     interval = args.interval
-    interval_divisor = 1.0
+    interval_field_divisor = 1.0
     if args.interval_field:
         if args.interval_field_unit == "second":
             pass
         elif args.interval_field_unit == "millisecond":
-            interval_divisor = 1e3
+            interval_field_divisor = 1e3
         elif args.interval_field_unit == "microsecond":
-            interval_divisor = 1e6
+            interval_field_divisor = 1e6
         elif args.interval_field_unit == "nanosecond":
-            interval_divisor = 1e9
+            interval_field_divisor = 1e9
         else:
             raise RuntimeError(
                 "Invalid interval field unit: %s", args.interval_field_unit
@@ -314,7 +326,8 @@ if __name__ == "__main__":
                             loop_start + timedelta(seconds=elapsed),
                             interval,
                             args.interval_field,
-                            interval_divisor,
+                            interval_field_divisor,
+                            args.interval_field_diff,
                             args.incremental_field,
                             args.incremental_field_step,
                         )
@@ -359,7 +372,8 @@ if __name__ == "__main__":
                         loop_start + timedelta(seconds=elapsed),
                         interval,
                         args.interval_field,
-                        interval_divisor,
+                        interval_field_divisor,
+                        args.interval_field_diff,
                         args.incremental_field,
                         args.incremental_field_step,
                     )
