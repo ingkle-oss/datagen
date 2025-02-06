@@ -154,11 +154,11 @@ def pipeline_delete(
     logger.info("Pipeline is deleted: %s", pipeline_name)
 
 
-def convert_dict_to_field(org: dict) -> Field:
+def convert_dict_to_schema(org: dict) -> list[Field]:
     mapping = {
-        int: "integer",
+        int: "long",
         str: "string",
-        float: "float",
+        float: "double",
         bool: "boolean",
         bytes: "binary",
     }
