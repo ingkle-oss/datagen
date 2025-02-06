@@ -49,6 +49,20 @@ python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-u
  python3 src/publish_file.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1 ---rate-interval 1.0 --filepath loop.jsonl
 ```
 
+Create, Delete a Nazare pipeline
+
+```bash
+# Create pipeline
+python3 src/nazare_pipeline_create.py \
+--store-api-url STORE_API_URL --store-api-username STORE_API_USERNAME --store-api-password STORE_API_PASSWORD \
+--pipeline-name PIPELINE_NAME -no-pipeline-deltasync --pipeline-retention '60,d' --schema-file SCHEMA_FILE
+
+# Delete pipeline
+python3 src/nazare_pipeline_delete.py \
+--store-api-url STORE_API_URL --store-api-username STORE_API_USERNAME --store-api-password STORE_API_PASSWORD \
+--pipeline-name PIPELINE_NAME \
+```
+
 ## Run on docker
 
 ```bash

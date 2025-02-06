@@ -15,6 +15,7 @@ from confluent_kafka import KafkaException, Producer
 from fastnumbers import check_float
 
 from utils.utils import download_s3file, encode, eval_create_func, load_rows
+from utils.nazare import pipeline_create
 
 REPORT_COUNT = 0
 
@@ -237,16 +238,16 @@ if __name__ == "__main__":
         "--interval", help="Record interval in seconds", type=float, default=1.0
     )
     parser.add_argument(
-        "--interval-field", help="Use field(float) value as interval between records"
-    )
-    parser.add_argument(
-        "--interval-field-diff",
-        help="Use field(datetime) difference as interval between records",
+        "--interval-field", help="Use field (float) value as interval between records"
     )
     parser.add_argument(
         "--interval-field-unit",
         help="Interval field unit",
         choices=["second", "microsecond", "millisecond", "nanosecond"],
+    )
+    parser.add_argument(
+        "--interval-field-diff",
+        help="Use field(datetime) difference as interval between records",
     )
 
     # Other field options
@@ -270,6 +271,33 @@ if __name__ == "__main__":
     parser.add_argument("--eval-field", help="Evaluated field")
     parser.add_argument("--eval-field-expr", help="Evaluated field expression")
 
+    # NZStore REST API
+    parser.add_argument(
+        "--store-api-url",
+        help="Store API URL",
+        default="http://nzstore.nzstore.svc.cluster.local:8000/api/v1/pipelines",
+    )
+    parser.add_argument("--store-api-username", help="Store API username")
+    parser.add_argument("--store-api-password", help="Store API password")
+
+    # NZStore pipeline
+    parser.add_argument(
+        "--pipeline-deltasync-enabled",
+        help="Enable deltasync",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument(
+        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
+    )
+    parser.add_argument("--schema-file", help="Schema file")
+    parser.add_argument(
+        "--schema-file-type",
+        help="Schema file type",
+        choices=["csv", "json", "bson"],
+        default="csv",
+    )
+
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
 
@@ -277,6 +305,26 @@ if __name__ == "__main__":
         level=args.loglevel,
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
+
+    if (
+        args.store_api_url
+        and args.store_api_username
+        and args.store_api_password
+        and args.schema_file
+        and args.schema_file_type
+    ):
+        logging.info("Creating pipeline: %s", args.kafka_topic)
+        pipeline_name = args.kafka_topic
+        pipeline_create(
+            args.store_api_url,
+            args.store_api_username,
+            args.store_api_password,
+            pipeline_name,
+            load_rows(args.schema_file, args.schema_file_type),
+            args.pipeline_deltasync_enabled,
+            args.pipeline_retention,
+            logger=logging,
+        )
 
     custom_rows = {}
     for kv in args.custom_rows:
@@ -407,7 +455,7 @@ if __name__ == "__main__":
                         args.eval_field,
                         eval_func,
                     )
-                    elapsed += interval
+                    elapsed += interval if interval > 0 else 0
 
                 if args.kafka_flush:
                     producer.flush()
@@ -455,7 +503,7 @@ if __name__ == "__main__":
                     args.eval_field,
                     eval_func,
                 )
-                elapsed += interval
+                elapsed += interval if interval > 0 else 0
                 row_idx = (row_idx + 1) % len(rows)
 
             if args.kafka_flush:

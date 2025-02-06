@@ -19,6 +19,7 @@ zstandard = "*"
 pandas = "*"
 fsspec = "*"
 s3fs = "==2024.6.1"
+pydantic = "*"
 
 [dev-packages]
 black = "*"
