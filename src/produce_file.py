@@ -314,13 +314,20 @@ if __name__ == "__main__":
         and args.schema_file_type
     ):
         logging.info("Creating pipeline: %s", args.kafka_topic)
+
+        schema_file = args.schema_file
+        if schema_file.startswith("s3a://"):
+            schema_file = download_s3file(
+                schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
+            )
+
         pipeline_name = args.kafka_topic
         pipeline_create(
             args.store_api_url,
             args.store_api_username,
             args.store_api_password,
             pipeline_name,
-            load_rows(args.schema_file, args.schema_file_type),
+            load_rows(schema_file, args.schema_file_type),
             args.pipeline_deltasync_enabled,
             args.pipeline_retention,
             logger=logging,
