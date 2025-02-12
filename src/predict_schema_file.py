@@ -6,7 +6,7 @@ import json
 import argparse
 import logging
 
-from utils.utils import download_s3file
+from utils.utils import download_s3file, load_rows
 from fastnumbers import check_float
 from utils.nazare import convert_dict_to_schema, Field
 
@@ -25,14 +25,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input-type",
         help="Input file type",
-        choices=["csv", "json"],
-        default="json",
+        choices=["csv", "jsonl"],
+        default="jsonl",
     )
     parser.add_argument(
         "--output-type",
         help="Output file type",
-        choices=["csv", "json"],
-        default="json",
+        choices=["csv", "jsonl"],
+        default="jsonl",
     )
 
     parser.add_argument(
@@ -69,6 +69,7 @@ if __name__ == "__main__":
             row = {}
             if args.input_type == "csv":
                 vals = line.strip().split(",")
+                load_rows(filepath, args.input_type)
 
                 row = [float(v) if check_float(v) else v for v in vals]
                 row = dict(zip(headers, row))
@@ -88,7 +89,7 @@ if __name__ == "__main__":
             if args.enable_date:
                 fields.insert(1, Field(name="date", type="date"))
 
-            if args.output_type == "json":
+            if args.output_type == "jsonl":
                 for field in fields:
                     print(field.model_dump_json())
             else:

@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import signal
 import sys
@@ -9,10 +8,9 @@ from datetime import datetime, timedelta, timezone
 from ssl import create_default_context
 
 import paho.mqtt.client as mqtt
-from fastnumbers import check_float
 
-from utils.utils import download_s3file, encode, eval_create_func, load_rows
 from utils.nazare import pipeline_create
+from utils.utils import LoadRows, download_s3file, encode, eval_create_func, load_rows
 
 
 def on_connect(client: mqtt.Client, userdata, flags, rc, properties):
@@ -160,8 +158,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input-type",
         help="Input file type",
-        choices=["csv", "json", "bson"],
-        default="json",
+        choices=["csv", "jsonl", "bsonl"],
+        default="jsonl",
     )
 
     # Output
@@ -236,20 +234,20 @@ if __name__ == "__main__":
 
     # NZStore pipeline
     parser.add_argument(
+        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
+    )
+    parser.add_argument(
         "--pipeline-deltasync-enabled",
         help="Enable deltasync",
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument(
-        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
-    )
     parser.add_argument("--schema-file", help="Schema file")
     parser.add_argument(
         "--schema-file-type",
         help="Schema file type",
-        choices=["csv", "json", "bson"],
-        default="csv",
+        choices=["csv", "jsonl", "bsonl"],
+        default="json",
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -267,20 +265,17 @@ if __name__ == "__main__":
         and args.schema_file
         and args.schema_file_type
     ):
-        logging.info("Creating pipeline: %s", args.kafka_topic)
-
         schema_file = args.schema_file
         if schema_file.startswith("s3a://"):
             schema_file = download_s3file(
                 schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
             )
 
-        pipeline_name = args.kafka_topic
         pipeline_create(
             args.store_api_url,
             args.store_api_username,
             args.store_api_password,
-            pipeline_name,
+            args.mqtt_topic,
             load_rows(schema_file, args.schema_file_type),
             args.pipeline_deltasync_enabled,
             args.pipeline_retention,
@@ -358,88 +353,21 @@ if __name__ == "__main__":
     UNIQUE_ALT_IDX = 0
 
     # For bigfile, load file one by one
-    if args.bigfile:
-        if args.input_type == "bson":
-            raise RuntimeError("'bson' is not supported for bigfile(one-by-one)")
-
-        with open(filepath, "r", encoding="utf-8") as f:
-            if args.input_type == "csv":
-                line = f.readline()
-                headers = line.strip().split(",")
-
-            body_start = f.tell()
-            try:
-                while True:
-                    elapsed = 0
-                    loop_start = datetime.now(timezone.utc)
-                    for _ in range(args.rate):
-                        line = f.readline()
-                        if not line:
-                            f.seek(body_start)
-                            line = f.readline()
-
-                        if args.input_type == "csv":
-                            row = [
-                                float(v) if check_float(v) else v
-                                for v in line.strip().split(",")
-                            ]
-                            row = dict(zip(headers, row))
-                        else:
-                            row = json.loads(line)
-
-                        row = {
-                            **custom_rows,
-                            **row,
-                        }
-                        if not row:
-                            logging.debug("No values to be produced")
-                            continue
-
-                        interval = publish(
-                            mqttc,
-                            args.output_type,
-                            args.mqtt_topic,
-                            args.mqtt_qos,
-                            row,
-                            loop_start + timedelta(seconds=elapsed),
-                            interval,
-                            args.interval_field,
-                            interval_field_divisor,
-                            args.interval_field_diff,
-                            args.incremental_field,
-                            args.incremental_field_step,
-                            args.datetime_field,
-                            args.datetime_field_format,
-                            args.eval_field,
-                            eval_func,
-                        )
-                        elapsed += interval if interval > 0 else 0
-
-                    wait = (
-                        elapsed
-                        - (datetime.now(timezone.utc) - loop_start).total_seconds()
-                    )
-                    wait = 0.0 if wait < 0 else wait
-                    time.sleep(wait)
-            finally:
-                mqttc.loop_stop()
-                mqttc.disconnect()
-                logging.info("Finished")
-    else:
-        rows = load_rows(filepath, args.input_type)
-        if not rows:
-            logging.warning("No values to be produced")
-            exit(0)
-
-        row_idx = 0
+    with LoadRows(filepath, args.input_type) as rows:
         try:
             while True:
                 elapsed = 0
-                loop_start = datetime.now(timezone.utc)
+                start_time = datetime.now(timezone.utc)
                 for _ in range(args.rate):
+                    try:
+                        row = next(rows)
+                    except StopIteration:
+                        rows.seek(0)
+                        row = next(rows)
+
                     row = {
                         **custom_rows,
-                        **rows[row_idx],
+                        **row,
                     }
                     if not row:
                         logging.debug("No values to be produced")
@@ -451,7 +379,7 @@ if __name__ == "__main__":
                         args.mqtt_topic,
                         args.mqtt_qos,
                         row,
-                        loop_start + timedelta(seconds=elapsed),
+                        start_time + timedelta(seconds=elapsed),
                         interval,
                         args.interval_field,
                         interval_field_divisor,
@@ -464,10 +392,9 @@ if __name__ == "__main__":
                         eval_func,
                     )
                     elapsed += interval if interval > 0 else 0
-                    row_idx = (row_idx + 1) % len(rows)
 
                 wait = (
-                    elapsed - (datetime.now(timezone.utc) - loop_start).total_seconds()
+                    elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
                 )
                 wait = 0.0 if wait < 0 else wait
                 time.sleep(wait)

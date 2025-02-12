@@ -6,7 +6,6 @@ name = "pypi"
 [packages]
 confluent-kafka = "*"
 faker = "*"
-bson = "*"
 fastnumbers = "*"
 boto3 = "*"
 psycopg = "*"
@@ -20,10 +19,12 @@ pandas = "*"
 fsspec = "*"
 s3fs = "==2024.6.1"
 pydantic = "*"
+pymongo = "*"
 
 [dev-packages]
 black = "*"
 flake8 = "*"
+ipython = "*"
 
 [requires]
 python_version = "3.11"

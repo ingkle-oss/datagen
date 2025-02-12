@@ -1,9 +1,9 @@
 import ast
-import csv
 import json
 import logging
 import os
 from collections.abc import Callable
+from typing import Literal
 from urllib.parse import urlparse
 
 import boto3
@@ -13,7 +13,7 @@ from fastnumbers import check_float
 
 def encode(value: dict | str, type: str):
     if type == "bson":
-        return bson.dumps(value)
+        return bson.encode(value)
     elif type == "json":
         return json.dumps(value, default=str)
     elif type == "csv":
@@ -23,27 +23,90 @@ def encode(value: dict | str, type: str):
 
 
 def load_rows(filepath: str, filetype: str) -> list[dict] | list[str]:
-    logging.info("Loading file [%s] %s...", filetype, filepath)
     values = []
-    if filetype == "bson":
+    if filetype == "bsonl":
         with open(filepath, "rb") as f:
-            values.append(bson.loads(f.read()))
+            for line in bson.decode_file_iter(f):
+                values.append(line)
     else:
         with open(filepath, "r", encoding="utf-8") as f:
-            if filetype == "json":
+            if filetype == "jsonl":
                 for line in f:
                     values.append(json.loads(line))
             elif filetype == "csv":
-                values = list(csv.DictReader(f))
-                for value in values:
-                    for k, v in value.items():
-                        if check_float(v):
-                            value[k] = float(v)
-            else:
-                values = f.readlines()
-    logging.info("Loaded %s rows", len(values))
+                headers = f.readline().strip().split(",")
+                row = []
+                while line := f.readline():
+                    if not line:
+                        break
+
+                    for v in line.strip().split(","):
+                        if not v:
+                            row.append(None)
+                        elif check_float(v):
+                            row.append(float(v))
+                        else:
+                            row.append(v)
+                    values.append(dict(zip(headers, row)))
 
     return values
+
+
+class LoadRows(object):
+    def __init__(self, filepath: str, filetype: str = Literal["csv", "jsonl", "bsonl"]):
+        self.filepath = filepath
+        self.filetype = filetype
+        self.bson_iter = None
+
+        if self.filetype == "bsonl":
+            self.fo = open(self.filepath, "rb")
+        else:
+            self.fo = open(self.filepath, "r", encoding="utf-8")
+
+    def __enter__(self):
+        if self.filetype == "bsonl":
+            self.bson_iter = bson.decode_file_iter(self.fo)
+        elif self.filetype == "csv":
+            self.headers = self.fo.readline().strip().split(",")
+
+        return self
+
+    def __exit__(self, type, value, trace_back):
+        self.fo.close()
+
+    def seek(self, pos):
+        self.fo.seek(pos)
+        if self.filetype == "bsonl":
+            self.bson_iter = bson.decode_file_iter(self.fo)
+        elif self.filetype == "csv":
+            self.headers = self.fo.readline().strip().split(",")
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.filetype == "bsonl":
+            return next(self.bson_iter)
+        else:
+            line = self.fo.readline()
+            if not line:
+                raise StopIteration
+
+            if self.filetype == "csv":
+                row = []
+                for v in line.strip().split(","):
+                    if not v:
+                        row.append(None)
+                    elif check_float(v):
+                        row.append(float(v))
+                    else:
+                        row.append(v)
+
+                ret = dict(zip(self.headers, row))
+            elif self.filetype == "jsonl":
+                ret = json.loads(line)
+
+        return ret
 
 
 def download_s3file(filepath: str, accesskey: str, secretkey: str, endpoint: str):

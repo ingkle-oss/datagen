@@ -9,6 +9,15 @@ from utils.utils import download_s3file, load_rows
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
+    # File
+    parser.add_argument(
+        "--s3-endpoint",
+        help="S3 url",
+        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
+    )
+    parser.add_argument("--s3-accesskey", help="S3 accesskey")
+    parser.add_argument("--s3-secretkey", help="S3 secretkey")
+
     # NZStore REST API
     parser.add_argument(
         "--store-api-url",
@@ -22,25 +31,16 @@ if __name__ == "__main__":
         "--store-api-password", help="Store API password", required=True
     )
 
-    # File
-    parser.add_argument(
-        "--s3-endpoint",
-        help="S3 url",
-        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
-    )
-    parser.add_argument("--s3-accesskey", help="S3 accesskey")
-    parser.add_argument("--s3-secretkey", help="S3 secretkey")
-
+    # NZStore pipeline
     parser.add_argument("--pipeline-name", help="Pipeline name", required=True)
-
+    parser.add_argument(
+        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
+    )
     parser.add_argument(
         "--pipeline-deltasync-enabled",
         help="Enable deltasync",
         action=argparse.BooleanOptionalAction,
         default=False,
-    )
-    parser.add_argument(
-        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
     )
 
     parser.add_argument(
@@ -51,8 +51,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--schema-file-type",
         help="Schema file type",
-        choices=["csv", "json", "bson"],
-        default="csv",
+        choices=["csv", "jsonl", "bsonl"],
+        default="json",
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")

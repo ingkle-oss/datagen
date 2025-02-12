@@ -10,10 +10,9 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 import requests
-from fastnumbers import check_float
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-from utils.utils import download_s3file, encode, eval_create_func, load_rows
+from utils.utils import download_s3file, encode, eval_create_func, load_rows, LoadRows
 from utils.nazare import pipeline_create
 
 INCREMENTAL_IDX = 0
@@ -138,8 +137,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input-type",
         help="Input file type",
-        choices=["csv", "json", "bson"],
-        default="json",
+        choices=["csv", "jsonl", "bsonl"],
+        default="jsonl",
     )
 
     # Output
@@ -213,20 +212,20 @@ if __name__ == "__main__":
 
     # NZStore pipeline
     parser.add_argument(
+        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
+    )
+    parser.add_argument(
         "--pipeline-deltasync-enabled",
         help="Enable deltasync",
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument(
-        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
-    )
     parser.add_argument("--schema-file", help="Schema file")
     parser.add_argument(
         "--schema-file-type",
         help="Schema file type",
-        choices=["csv", "json", "bson"],
-        default="csv",
+        choices=["csv", "jsonl", "bsonl"],
+        default="json",
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -244,20 +243,17 @@ if __name__ == "__main__":
         and args.schema_file
         and args.schema_file_type
     ):
-        logging.info("Creating pipeline: %s", args.kafka_topic)
-
         schema_file = args.schema_file
         if schema_file.startswith("s3a://"):
             schema_file = download_s3file(
                 schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
             )
 
-        pipeline_name = args.kafka_topic
         pipeline_create(
             args.store_api_url,
             args.store_api_username,
             args.store_api_password,
-            pipeline_name,
+            args.kafka_topic,
             load_rows(schema_file, args.schema_file_type),
             args.pipeline_deltasync_enabled,
             args.pipeline_retention,
@@ -301,102 +297,21 @@ if __name__ == "__main__":
     requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
     scheme = "https" if args.redpanda_ssl else "http"
 
-    # For bigfile, load file one by one
-    if args.bigfile:
-        if args.input_type == "bson":
-            raise RuntimeError("'bson' is not supported for bigfile(one-by-one)")
-
-        with open(filepath, "r", encoding="utf-8") as f:
-            if args.input_type == "csv":
-                line = f.readline()
-                headers = line.strip().split(",")
-
-            body_start = f.tell()
-            while True:
-                elapsed = 0
-                records = []
-                loop_start = datetime.now(timezone.utc)
-                for _ in range(args.rate):
-                    line = f.readline()
-                    if not line:
-                        f.seek(body_start)
-                        line = f.readline()
-
-                    if args.input_type == "csv":
-                        row = [
-                            float(v) if check_float(v) else v
-                            for v in line.strip().split(",")
-                        ]
-                        row = dict(zip(headers, row))
-                    else:
-                        row = json.loads(line)
-
-                    row = {
-                        **custom_rows,
-                        **row,
-                    }
-                    if not row:
-                        logging.debug("No values to be produced")
-                        continue
-
-                    record, interval = create_record(
-                        args.kafka_partition,
-                        args.kafka_key,
-                        row,
-                        loop_start + timedelta(seconds=elapsed),
-                        interval,
-                        args.interval_field,
-                        interval_field_divisor,
-                        args.interval_field_diff,
-                        args.incremental_field,
-                        args.incremental_field_step,
-                        args.datetime_field,
-                        args.datetime_field_format,
-                        args.eval_field,
-                        eval_func,
-                    )
-                    records.append(record)
-                    elapsed += interval if interval > 0 else 0
-
-                res = requests.post(
-                    url=(
-                        f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}"
-                        f"/topics/{args.kafka_topic}"
-                    ),
-                    data=encode({"records": records}, args.output_type),
-                    headers={
-                        "Content-Type": "application/vnd.kafka.json.v2+json",
-                        "content-encoding": "gzip",
-                    },
-                    verify=args.redpanda_verify,
-                ).json()
-                logging.info(
-                    f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
-                )
-
-                wait = (
-                    elapsed - (datetime.now(timezone.utc) - loop_start).total_seconds()
-                )
-                wait = 0.0 if wait < 0 else wait
-                time.sleep(wait)
-
-            logging.info("Finished")
-
-    else:
-        rows = load_rows(filepath, args.input_type)
-        if not rows:
-            logging.warning("No values to be produced")
-            exit(0)
-
-        row_idx = 0
+    with LoadRows(filepath, args.input_type) as rows:
         while True:
             elapsed = 0
             records = []
-            loop_start = datetime.now(timezone.utc)
+            start_time = datetime.now(timezone.utc)
             for _ in range(args.rate):
+                try:
+                    row = next(rows)
+                except StopIteration:
+                    rows.seek(0)
+                    row = next(rows)
+
                 row = {
                     **custom_rows,
-                    **rows[row_idx],
+                    **row,
                 }
                 if not row:
                     logging.debug("No values to be produced")
@@ -406,7 +321,7 @@ if __name__ == "__main__":
                     args.kafka_partition,
                     args.kafka_key,
                     row,
-                    loop_start + timedelta(seconds=elapsed),
+                    start_time + timedelta(seconds=elapsed),
                     interval,
                     args.interval_field,
                     interval_field_divisor,
@@ -420,7 +335,6 @@ if __name__ == "__main__":
                 )
                 records.append(record)
                 elapsed += interval if interval > 0 else 0
-                row_idx = (row_idx + 1) % len(rows)
 
             res = requests.post(
                 url=(
@@ -433,13 +347,14 @@ if __name__ == "__main__":
                     "content-encoding": "gzip",
                 },
                 verify=args.redpanda_verify,
-            ).json()
+            )
+            res.raise_for_status()
             logging.debug(encode({"records": records}, args.output_type))
             logging.info(
-                f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
+                f"Total {len(records)} messages delivered: {json.dumps(res.json(), indent=2)}"
             )
 
-            wait = elapsed - (datetime.now(timezone.utc) - loop_start).total_seconds()
+            wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
             wait = 0.0 if wait < 0 else wait
             time.sleep(wait)
 

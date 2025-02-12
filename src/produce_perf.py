@@ -140,8 +140,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input-type",
         help="Input file type",
-        choices=["csv", "json", "bson"],
-        default="json",
+        choices=["csv", "jsonl", "bsonl"],
+        default="jsonl",
     )
 
     parser.add_argument("--loop-max", help="maximum loop count", type=int, default=1)
