@@ -149,16 +149,21 @@ def pipeline_delete(
     logger.info("Pipeline is deleted: %s", pipeline_name)
 
 
-def convert_dict_to_schema(org: dict) -> list[Field]:
+def predict_field(key: str, val: any) -> Field:
     mapping = {
-        int: "long",
+        # int: "integer",
+        int: "double",  # if lack of sample data, it is hard to predict integer
         str: "string",
         float: "double",
         bool: "boolean",
         bytes: "binary",
     }
+    return Field(name=key, type=mapping[type(val)])
+
+
+def predict_fields(kvs: dict) -> list[Field]:
     fields = []
-    for k, v in org.items():
-        fields.append(Field(name=k, type=mapping[type(v)]))
+    for k, v in kvs.items():
+        fields.append(predict_field(k, v))
 
     return fields

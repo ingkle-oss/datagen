@@ -41,7 +41,7 @@ def load_rows(filepath: str, filetype: str) -> list[dict] | list[str]:
                         break
 
                     for v in line.strip().split(","):
-                        if not v:
+                        if v == "":
                             row.append(None)
                         elif check_float(v):
                             row.append(float(v))
@@ -95,7 +95,7 @@ class LoadRows(object):
             if self.filetype == "csv":
                 row = []
                 for v in line.strip().split(","):
-                    if not v:
+                    if v == "":
                         row.append(None)
                     elif check_float(v):
                         row.append(float(v))

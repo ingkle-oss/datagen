@@ -1,14 +1,12 @@
 #!python
 
-import io
-import csv
-import json
 import argparse
+import csv
+import io
 import logging
 
-from utils.utils import download_s3file, load_rows
-from fastnumbers import check_float
-from utils.nazare import convert_dict_to_schema, Field
+from utils.nazare import Field, predict_field
+from utils.utils import LoadRows, download_s3file
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -25,7 +23,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input-type",
         help="Input file type",
-        choices=["csv", "jsonl"],
+        choices=["csv", "jsonl", "bsonl"],
         default="jsonl",
     )
     parser.add_argument(
@@ -62,46 +60,60 @@ if __name__ == "__main__":
             filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
         )
 
-    with open(filepath, "r", encoding="utf-8") as f:
-        headers = f.readline().strip().split(",")
-
-        while line := f.readline():
-            row = {}
-            if args.input_type == "csv":
-                vals = line.strip().split(",")
-                load_rows(filepath, args.input_type)
-
-                row = [float(v) if check_float(v) else v for v in vals]
-                row = dict(zip(headers, row))
-            else:
-                row = json.loads(line)
-
-            if not row:
-                raise ValueError("Empty row")
-
-            if None in row.values() or "" in row.values():
-                continue
-
-            fields = convert_dict_to_schema(row)
-
-            if args.enable_timestamp:
-                fields.insert(0, Field(name="timestamp", type="timestamp"))
-            if args.enable_date:
-                fields.insert(1, Field(name="date", type="date"))
-
-            if args.output_type == "jsonl":
-                for field in fields:
-                    print(field.model_dump_json())
-            else:
-                output = io.StringIO()
-                writer = csv.DictWriter(
-                    output, fieldnames=Field.model_json_schema()["properties"].keys()
+    fields = []
+    with LoadRows(filepath, args.input_type) as rows:
+        while True:
+            try:
+                row = next(rows)
+            except StopIteration as e:
+                raise RuntimeError(
+                    "Cannot predict schema before reaching the end of file", e
                 )
-                writer.writeheader()
-                for field in fields:
-                    writer.writerow(field.model_dump())
 
-                print(output.getvalue())
-                output.close()
+            if all(k in [f.name for f in fields] for k, v in row.items()):
+                break
 
-            break
+            for k, v in row.items():
+                # print(k, v)
+                if not isinstance(k, str) or not k:
+                    raise RuntimeError("Cannot predict schema because of empty key")
+
+                if v is None or v == "":
+                    continue
+
+                try:
+                    field = predict_field(k, v)
+                except Exception as e:
+                    raise RuntimeError(
+                        "Cannot predict schema because it has unrecognized value", e
+                    )
+
+                prev = [f for f in fields if f.name == k]
+                if prev:
+                    if prev[0].type != field.type:
+                        raise RuntimeError(
+                            f"Field type is evolving: key={field.name}, value={prev[0].type} --> {field.type}"
+                        )
+                    continue
+
+                fields.append(field)
+
+        if args.enable_timestamp:
+            fields.insert(0, Field(name="timestamp", type="timestamp"))
+        if args.enable_date:
+            fields.insert(1, Field(name="date", type="date"))
+
+        if args.output_type == "jsonl":
+            for field in fields:
+                print(field.model_dump_json())
+        else:
+            output = io.StringIO()
+            writer = csv.DictWriter(
+                output, fieldnames=Field.model_json_schema()["properties"].keys()
+            )
+            writer.writeheader()
+            for field in fields:
+                writer.writerow(field.model_dump())
+
+            print(output.getvalue())
+            output.close()

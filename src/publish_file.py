@@ -150,12 +150,6 @@ if __name__ == "__main__":
 
     parser.add_argument("--filepath", help="file to be produced", required=True)
     parser.add_argument(
-        "--bigfile",
-        help="Whether file is big or not (default: False)",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
-    parser.add_argument(
         "--input-type",
         help="Input file type",
         choices=["csv", "jsonl", "bsonl"],
