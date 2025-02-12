@@ -23,10 +23,10 @@ class Field(BaseModel):
         "timestamp",
         "timestamp_ntz",
     ]
-    subtype: str = None
+    subtype: str | None = None
     nullable: bool = True
-    comment: str = None
-    alias: str = None
+    comment: str | None = None
+    alias: str | None = None
 
 
 def _pipeline_check(
@@ -36,19 +36,26 @@ def _pipeline_check(
     name: str,
     logger: logging.Logger = logging,
 ):
+    logger.info("Checking pipeline existence: %s", name)
     session = requests.Session()
     session.auth = (store_username, password)
     response = session.get(
         store_url + f"/{name}",
         headers={"Content-Type": "application/json"},
     )
-    if not response.ok:
+    logger.debug("%s, %s", response.status_code, response.text)
+    if response.status_code == 200:
+        if response.json().get("is_deleting", False):
+            raise RuntimeError(f"Pipeline is being deleted: {name}")
+
+        return True
+
+    if response.status_code == 404:
         return False
 
-    if response.json().get("is_deleting", False):
-        raise Exception(f"Pipeline is being deleted: {name}")
-
-    return True
+    raise RuntimeError(
+        f"Failed to get table: {response.status_code}, {response.reason}"
+    )
 
 
 def pipeline_create(
@@ -56,7 +63,7 @@ def pipeline_create(
     store_api_username: str,
     store_api_password: str,
     pipeline_name: str,
-    fields: dict,
+    fields: list[dict],
     enable_deltasync: bool = False,
     delete_retention: str = "",
     logger: logging.Logger = logging,
@@ -68,27 +75,17 @@ def pipeline_create(
         pipeline_name,
         logger=logger,
     ):
-        logger.info("Pipeline already exists: %s", pipeline_name)
+        logger.warning("Pipeline already exists: %s", pipeline_name)
         return
 
     logger.info("Creating new pipeline: %s", pipeline_name)
 
     if re.match(r"^[a-z0-9_]+$", pipeline_name) is None:
-        raise Exception(f"Invalid table name: {pipeline_name}")
+        raise RuntimeError(f"Invalid table name: {pipeline_name}")
 
     fields_create = []
     for field in TypeAdapter(list[Field]).validate_python(fields):
-        fields_create.append(
-            {
-                "name": field.name,
-                "type": field.type,
-                "subtype": field.subtype,
-                "nullable": field.nullable,
-                "comment": field.comment,
-                "alias": field.alias,
-                "" "table_name": pipeline_name,
-            }
-        )
+        fields_create.append(field.model_dump(exclude_none=True))
 
     if logger.root.level <= logging.DEBUG:
         logger.debug("Fields:")
@@ -116,10 +113,9 @@ def pipeline_create(
         headers={"Content-Type": "application/json"},
         json=data,
     )
-    if not response.ok:
-        raise Exception(
-            f"Failed to create table: {response.status_code}, {response.reason}"
-        )
+    logger.debug("%s, %s", response.status_code, response.text)
+    response.raise_for_status()
+
     logger.info("Pipeline is created: %s", pipeline_name)
 
 
@@ -147,10 +143,9 @@ def pipeline_delete(
         store_api_url + f"/{pipeline_name}",
         headers={"Content-Type": "application/json"},
     )
-    if not response.ok:
-        raise Exception(
-            f"Failed to delete table: {response.status_code}, {response.reason}"
-        )
+    logger.debug("%s, %s", response.status_code, response.text)
+    response.raise_for_status()
+
     logger.info("Pipeline is deleted: %s", pipeline_name)
 
 
