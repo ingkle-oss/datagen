@@ -6,14 +6,13 @@
 import argparse
 import logging
 import time
-from datetime import date, datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta, timezone
 
 from confluent_kafka import KafkaException, Producer
 
-from utils.nazare import Field, load_schema_file, pipeline_create
-from utils.nzfake import NZFakerField
-from utils.utils import download_s3file, encode
+from utils.nzfake import NZFaker, NZFakerEdge, NZFakerStore
+from utils.utils import encode
+
 
 REPORT_COUNT = 0
 
@@ -119,22 +118,6 @@ if __name__ == "__main__":
         default=10,
     )
 
-    # File
-    parser.add_argument("--schema-file", help="Schema file", required=True)
-    parser.add_argument(
-        "--schema-file-type",
-        help="Schema file type",
-        choices=["csv", "jsonl", "bsonl"],
-        default="json",
-    )
-    parser.add_argument(
-        "--s3-endpoint",
-        help="S3 url",
-        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:8333",
-    )
-    parser.add_argument("--s3-accesskey", help="S3 accesskey")
-    parser.add_argument("--s3-secretkey", help="S3 secretkey")
-
     # Output
     parser.add_argument(
         "--output-type",
@@ -162,52 +145,90 @@ if __name__ == "__main__":
         "--interval", help="Record interval in seconds", type=float, default=1.0
     )
 
-    # NZStore REST API
+    # PostgreSQL
     parser.add_argument(
-        "--store-api-url",
-        help="Store API URL",
-        default="http://nzstore.nzstore.svc.cluster.local:8000/api/v1/pipelines",
+        "--postgresql-host",
+        help="PostgreSQL host",
+        default="postgresql-ha-pgpool.postgresql-ha.svc.cluster.local",
     )
-    parser.add_argument("--store-api-username", help="Store API username")
-    parser.add_argument("--store-api-password", help="Store API password")
+    parser.add_argument(
+        "--postgresql-port", help="PostgreSQL port", type=int, default=5432
+    )
+    parser.add_argument(
+        "--postgresql-username", help="PostgreSQL username", default=None
+    )
+    parser.add_argument(
+        "--postgresql-password", help="PostgreSQL password", default=None
+    )
+    parser.add_argument(
+        "--postgresql-database", help="PostgreSQL database", default="store"
+    )
+    parser.add_argument("--postgresql-table", help="PostgreSQL table")
 
-    # NZStore pipeline
+    # 1. if use_postgresql_store is True, then use PostgreSQL store
     parser.add_argument(
-        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
-    )
-    parser.add_argument(
-        "--pipeline-deltasync-enabled",
-        help="Enable deltasync",
+        "--use-postgresql-store",
+        help="Use PostgreSQL store",
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--postgresql-store-table-name",
+        help="store table name for fake schema",
+        default=None,
+    )
 
-    # Faker
+    # 2. if use_postgresql_edge is True, then use PostgreSQL edge data specs
     parser.add_argument(
-        "--timestamp-enabled",
-        help="Enable timestamp",
+        "--use-postgresql-edge",
+        help="Use PostgreSQL Edge",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     parser.add_argument(
-        "--date-enabled",
-        help="Enable date",
-        action=argparse.BooleanOptionalAction,
-        default=True,
+        "--postgresql-edge-id",
+        help="Edge ID for fake schema",
+        default=None,
+    )
+
+    # 3. else, parameters for fake schema
+    parser.add_argument(
+        "--field-bool-count", help="Number of bool field", type=int, default=0
     )
     parser.add_argument(
-        "--string-length", help="Length of string field", type=int, default=10
+        "--field-int-count", help="Number of int field", type=int, default=0
     )
     parser.add_argument(
-        "--string-cardinality",
+        "--field-float-count", help="Number of float field", type=int, default=0
+    )
+    parser.add_argument(
+        "--field-str-count", help="Number of string field", type=int, default=0
+    )
+    parser.add_argument(
+        "--field-str-cardinality",
         help="Number of string field cardinality",
         type=int,
-        default=0,
+        default=None,
     )
     parser.add_argument(
-        "--binary-length", help="Length of binary field", type=int, default=10
+        "--field-str-length", help="Length of string field", type=int, default=10
     )
-    parser.add_argument("--datetime-timezone", help="Datetime timezone", default="UTC")
+    parser.add_argument(
+        "--field-word-count", help="Number of word field", type=int, default=0
+    )
+    parser.add_argument(
+        "--field-text-count", help="Number of text field", type=int, default=0
+    )
+    parser.add_argument(
+        "--field-name-count", help="Number of name field", type=int, default=0
+    )
+
+    parser.add_argument(
+        "--schema-update-interval",
+        help="PostgreSQL update interval in seconds",
+        type=int,
+        default=30,
+    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -217,31 +238,79 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    schema_file = args.schema_file
-    if schema_file.startswith("s3a://"):
-        schema_file = download_s3file(
-            schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
-        )
-    fields: list[Field] = load_schema_file(schema_file, args.schema_file_type)
-
-    if args.store_api_url and args.store_api_username and args.store_api_password:
-        pipeline_create(
-            args.store_api_url,
-            args.store_api_username,
-            args.store_api_password,
-            args.kafka_topic,
-            fields,
-            args.pipeline_deltasync_enabled,
-            args.pipeline_retention,
-            logger=logging,
-        )
-
     custom_rows = {}
     for kv in args.custom_rows:
         key, val = kv.split("=")
         custom_rows[key] = val
 
     interval = args.interval
+
+    if args.use_postgresql_store:
+        if not all(
+            [
+                args.postgresql_host,
+                args.postgresql_port,
+                args.postgresql_username,
+                args.postgresql_password,
+                args.postgresql_database,
+                args.postgresql_table,
+                args.postgresql_store_table_name,
+            ]
+        ):
+            raise ValueError("postgresql options are not enough for store")
+
+        logging.info("Using faker from PostgreSQL store DB...")
+        fake = NZFakerStore(
+            host=args.postgresql_host,
+            port=args.postgresql_port,
+            username=args.postgresql_username,
+            password=args.postgresql_password,
+            database=args.postgresql_database,
+            table=args.postgresql_table,
+            table_name=args.postgresql_store_table_name,
+            loglevel=args.loglevel,
+            str_length=args.field_str_length,
+            str_cardinality=args.field_str_cardinality,
+        )
+    elif args.use_postgresql_edge:
+        if not all(
+            [
+                args.postgresql_host,
+                args.postgresql_port,
+                args.postgresql_username,
+                args.postgresql_password,
+                args.postgresql_database,
+                args.postgresql_table,
+                args.postgresql_edge_id,
+            ]
+        ):
+            raise ValueError("postgresql options are not enough for edge data specs")
+
+        logging.info("Using faker from PostgreSQL edge DB...")
+        fake = NZFakerEdge(
+            host=args.postgresql_host,
+            port=args.postgresql_port,
+            username=args.postgresql_username,
+            password=args.postgresql_password,
+            database=args.postgresql_database,
+            table=args.postgresql_table,
+            edge_id=args.postgresql_edge_id,
+            loglevel=args.loglevel,
+        )
+    else:
+        logging.info("Using faker from parameters...")
+        fake = NZFaker(
+            bool_count=args.field_bool_count,
+            int_count=args.field_int_count,
+            float_count=args.field_float_count,
+            word_count=args.field_word_count,
+            text_count=args.field_text_count,
+            name_count=args.field_name_count,
+            str_count=args.field_str_count,
+            str_length=args.field_str_length,
+            str_cardinality=args.field_str_cardinality,
+        )
+
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
     configs = {
@@ -280,25 +349,28 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
-    fake = NZFakerField(
-        fields,
-        args.string_length,
-        args.string_cardinality,
-        args.binary_length,
-        ZoneInfo(args.datetime_timezone),
-    )
-
+    prev = datetime.now(timezone.utc)
     while True:
+        if (
+            datetime.now(timezone.utc) - prev
+        ).total_seconds() > args.schema_update_interval:
+            fake.update_schema()
+            prev = datetime.now(timezone.utc)
+
+        if not fake.get_schema() and not custom_rows:
+            logging.warning("No schema found to be used or no custom key values")
+            time.sleep(interval * args.rate)
+            continue
+
         elapsed = 0
         start_time = datetime.now(timezone.utc)
         for _ in range(args.rate):
-            ts = (start_time + timedelta(seconds=elapsed)).timestamp()
-            row = {}
-            if args.timestamp_enabled:
-                row["timestamp"] = int(ts * 1e6)
-            if args.date_enabled:
-                row["date"] = date.fromtimestamp(ts)
-            row = row | fake.values() | custom_rows
+            row = {
+                "timestamp": int(
+                    (start_time + timedelta(seconds=elapsed)).timestamp() * 1e6
+                )
+            }
+            row = fake.values() | custom_rows
 
             producer.poll(0)
             try:

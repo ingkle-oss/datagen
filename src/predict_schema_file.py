@@ -35,13 +35,13 @@ if __name__ == "__main__":
         default="jsonl",
     )
     parser.add_argument(
-        "--enable-timestamp",
+        "--timestamp-enabled",
         help="Enable timestamp",
         action=argparse.BooleanOptionalAction,
         default=True,
     )
     parser.add_argument(
-        "--enable-date",
+        "--date-enabled",
         help="Enable date",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -89,9 +89,9 @@ if __name__ == "__main__":
 
                 fields.append(field)
 
-        if args.enable_timestamp:
+        if args.timestamp_enabled:
             fields.insert(0, Field(name="timestamp", type="timestamp"))
-        if args.enable_date:
+        if args.date_enabled:
             fields.insert(1, Field(name="date", type="date"))
 
         if args.output_type == "jsonl":

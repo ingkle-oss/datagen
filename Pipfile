@@ -20,6 +20,7 @@ fsspec = "*"
 s3fs = "==2024.6.1"
 pydantic = "*"
 pymongo = "*"
+orjson = "*"
 
 [dev-packages]
 black = "*"

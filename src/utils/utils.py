@@ -3,26 +3,44 @@ import json
 import logging
 import os
 from collections.abc import Callable
+from datetime import date
 from typing import Literal
 from urllib.parse import urlparse
 
 import boto3
 import bson
+import orjson
+from bson.codec_options import TypeCodec, TypeRegistry
 from fastnumbers import check_float
+from bson.codec_options import CodecOptions
 
 
-def encode(value: dict | str, type: str):
+class DateCodec(TypeCodec):
+    python_type = date
+    bson_type = str
+
+    def transform_python(self, value: date):
+        return str(value)
+
+    def transform_bson(self, value: str):
+        return date.fromisoformat(value)
+
+
+codec_options = CodecOptions(type_registry=TypeRegistry([DateCodec()]))
+
+
+def encode(value: dict | str, type: str) -> bytes:
     if type == "bson":
-        return bson.encode(value)
+        return bson.encode(value, codec_options=codec_options)
     elif type == "json":
-        return json.dumps(value, default=str)
+        return orjson.dumps(value, default=str)
     elif type == "csv":
-        return ",".join([str(val) for val in value.values()])
+        return ",".join([str(val) for val in value.values()]).encode("utf-8")
 
     return value.encode("utf-8")
 
 
-def csv_loads(value: str, headers: list[str]):
+def csv_loads(value: str, headers: list[str]) -> dict:
     vals = []
     for v in value.strip().split(","):
         if v == "":
@@ -35,7 +53,7 @@ def csv_loads(value: str, headers: list[str]):
     return {k: v for k, v in dict(zip(headers, vals)).items() if v is not None}
 
 
-def load_rows(filepath: str, filetype: str) -> list[dict] | list[str]:
+def load_rows(filepath: str, filetype: str) -> list[dict]:
     rows = []
     if filetype == "bsonl":
         with open(filepath, "rb") as f:

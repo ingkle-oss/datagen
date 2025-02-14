@@ -513,19 +513,18 @@ class NZFakerField:
     timezone_info: tzinfo
     timestamp_ntz_s: list[str]
 
-    str_choice: list[str]
-    str_length: int
-    str_cardinality: int
+    string_choice: list[str]
+    string_length: int
+    string_cardinality: int
     binary_length: int
 
     def __init__(
         self,
         fields: list[Field],
-        str_length: int = 10,
-        str_cardinality: int = 0,
-        binary_length: int = 10,
-        # timezone_info: tzinfo = tz.gettz("UTC"),
-        timezone_info=timezone.utc,
+        str_length: int,
+        str_cardinality: int,
+        binary_length: int,
+        datetime_timezone=timezone.utc,
     ):
         self.fake = Faker(use_weighting=False)
         self.fields = []
@@ -541,14 +540,14 @@ class NZFakerField:
         self.timestamps = []
         self.timestamp_ntz_s = []
 
-        self.str_length = 0 if str_length < 0 else str_length
-        self.str_cardinality = 0 if str_cardinality < 0 else str_cardinality
-        self.str_choice = []
+        self.string_length = 0 if str_length < 0 else str_length
+        self.string_cardinality = 0 if str_cardinality < 0 else str_cardinality
+        self.string_choice = []
         self.binary_length = 0 if binary_length < 0 else binary_length
-        self.timezone_info = timezone_info
+        self.timezone_info = datetime_timezone
 
-        if self.str_cardinality > 0:
-            self.str_choice = [
+        if self.string_cardinality > 0:
+            self.string_choice = [
                 self.fake.unique.pystr(max_chars=str_length)
                 for _ in range(str_cardinality)
             ]
@@ -582,11 +581,14 @@ class NZFakerField:
                 ],
             )
         )
-        if self.str_choice:
+        if self.string_choice:
             values |= dict(
                 zip(
                     self.strings,
-                    [random.choice(self.str_choice) for _ in range(len(self.strings))],
+                    [
+                        random.choice(self.string_choice)
+                        for _ in range(len(self.strings))
+                    ],
                 )
             )
         else:
@@ -611,7 +613,7 @@ class NZFakerField:
             zip(
                 self.binaries,
                 [
-                    self.fake.binary(length=len(self.binary_length))
+                    self.fake.binary(length=self.binary_length)
                     for _ in range(len(self.binaries))
                 ],
             )
