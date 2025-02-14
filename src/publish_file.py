@@ -9,8 +9,8 @@ from ssl import create_default_context
 
 import paho.mqtt.client as mqtt
 
-from utils.nazare import pipeline_create
-from utils.utils import LoadRows, download_s3file, encode, eval_create_func, load_rows
+from utils.nazare import pipeline_create, load_schema_file
+from utils.utils import LoadRows, download_s3file, encode, eval_create_func
 
 
 def on_connect(client: mqtt.Client, userdata, flags, rc, properties):
@@ -140,6 +140,20 @@ if __name__ == "__main__":
     )
 
     # File
+    parser.add_argument("--input-filepath", help="file to be produced", required=True)
+    parser.add_argument(
+        "--input-type",
+        help="Input file type",
+        choices=["csv", "jsonl", "bsonl"],
+        default="jsonl",
+    )
+    parser.add_argument("--schema-file", help="Schema file")
+    parser.add_argument(
+        "--schema-file-type",
+        help="Schema file type",
+        choices=["csv", "jsonl", "bsonl"],
+        default="json",
+    )
     parser.add_argument(
         "--s3-endpoint",
         help="S3 url",
@@ -147,14 +161,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--s3-accesskey", help="S3 accesskey")
     parser.add_argument("--s3-secretkey", help="S3 secretkey")
-
-    parser.add_argument("--filepath", help="file to be produced", required=True)
-    parser.add_argument(
-        "--input-type",
-        help="Input file type",
-        choices=["csv", "jsonl", "bsonl"],
-        default="jsonl",
-    )
 
     # Output
     parser.add_argument(
@@ -236,13 +242,6 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument("--schema-file", help="Schema file")
-    parser.add_argument(
-        "--schema-file-type",
-        help="Schema file type",
-        choices=["csv", "jsonl", "bsonl"],
-        default="json",
-    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -270,7 +269,7 @@ if __name__ == "__main__":
             args.store_api_username,
             args.store_api_password,
             args.mqtt_topic,
-            load_rows(schema_file, args.schema_file_type),
+            load_schema_file(schema_file, args.schema_file_type),
             args.pipeline_deltasync_enabled,
             args.pipeline_retention,
             logger=logging,
@@ -359,10 +358,7 @@ if __name__ == "__main__":
                         rows.seek(0)
                         row = next(rows)
 
-                    row = {
-                        **custom_rows,
-                        **row,
-                    }
+                    row = custom_rows | row
                     if not row:
                         logging.debug("No values to be produced")
                         continue

@@ -4,7 +4,7 @@ import random
 import string
 import struct
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, tzinfo
 
 from faker import Faker
 from sqlalchemy import (
@@ -18,6 +18,8 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+
+from utils.nazare import Field
 
 
 def _struct_to_value(format: str, size: int):
@@ -208,7 +210,7 @@ class Base(DeclarativeBase):
 
 
 def field_model(tablename):
-    class Field(Base):
+    class TableField(Base):
         __tablename__ = tablename
 
         name: Mapped[str] = mapped_column(String, primary_key=True)
@@ -242,12 +244,12 @@ def field_model(tablename):
             self.created_at = created_at
             self.updated_at = updated_at
 
-    return Field
+    return TableField
 
 
 class NZFakerStore(NZFakerBase):
     engine = None
-    Field = None
+    TableField = None
     fake = None
     fields = []
     str_choice: list[str]
@@ -273,7 +275,7 @@ class NZFakerStore(NZFakerBase):
             f"postgresql://{username}:{password}@{host}:{port}/{database}",
             echo=True if loglevel == "DEBUG" else False,
         )
-        self.Field = field_model(table)
+        self.TableField = field_model(table)
         self.table_name = table_name
         self.update_schema()
 
@@ -299,8 +301,8 @@ class NZFakerStore(NZFakerBase):
                 [
                     {"name": s.name, "type": s.type, "subtype": s.subtype}
                     for s in session.scalars(
-                        select(self.Field).where(
-                            self.Field.table_name == self.table_name
+                        select(self.TableField).where(
+                            self.TableField.table_name == self.table_name
                         )
                     ).all()
                 ],
@@ -491,5 +493,149 @@ class NZFakerEdge(NZFakerBase):
                 _values.extend(NZFakerEdge._dataspec_to_values(spec))
 
             values[source] = struct.pack(_formats, *_values)
+
+        return values
+
+
+class NZFakerField:
+    fake: Faker
+    fields: list[str]
+
+    integers: list[str]
+    longs: list[str]
+    strings: list[str]
+    floats: list[str]
+    doubles: list[str]
+    booleans: list[str]
+    binaries: list[str]
+    dates: list[str]
+    timestamps: list[str]
+    timezone_info: tzinfo
+    timestamp_ntz_s: list[str]
+
+    str_choice: list[str]
+    str_length: int
+    str_cardinality: int
+    binary_length: int
+
+    def __init__(
+        self,
+        fields: list[Field],
+        str_length: int = 10,
+        str_cardinality: int = 0,
+        binary_length: int = 10,
+        # timezone_info: tzinfo = tz.gettz("UTC"),
+        timezone_info=timezone.utc,
+    ):
+        self.fake = Faker(use_weighting=False)
+        self.fields = []
+
+        self.integers = []
+        self.longs = []
+        self.strings = []
+        self.floats = []
+        self.doubles = []
+        self.booleans = []
+        self.binaries = []
+        self.dates = []
+        self.timestamps = []
+        self.timestamp_ntz_s = []
+
+        self.str_length = 0 if str_length < 0 else str_length
+        self.str_cardinality = 0 if str_cardinality < 0 else str_cardinality
+        self.str_choice = []
+        self.binary_length = 0 if binary_length < 0 else binary_length
+        self.timezone_info = timezone_info
+
+        if self.str_cardinality > 0:
+            self.str_choice = [
+                self.fake.unique.pystr(max_chars=str_length)
+                for _ in range(str_cardinality)
+            ]
+
+        maps = {
+            "integer": self.integers,
+            "long": self.longs,
+            "string": self.strings,
+            "float": self.floats,
+            "double": self.doubles,
+            "boolean": self.booleans,
+            "binary": self.binaries,
+            "date": self.dates,
+            "timestamp": self.timestamps,
+            "timestamp_ntz": self.timestamp_ntz_s,
+        }
+        for field in fields:
+            if field.name == "timestamp" or field.name == "date":
+                continue
+
+            maps[field.type].append(field.name)
+
+    def values(self):
+        values = {}
+        values |= dict(
+            zip(
+                self.integers + self.longs,
+                [
+                    random.randint(-(2**31), (2**31) - 1)
+                    for _ in range(len(self.integers) + len(self.longs))
+                ],
+            )
+        )
+        if self.str_choice:
+            values |= dict(
+                zip(
+                    self.strings,
+                    [random.choice(self.str_choice) for _ in range(len(self.strings))],
+                )
+            )
+        else:
+            values |= dict(zip(self.strings, self.fake.words(len(self.strings))))
+        values |= dict(
+            zip(
+                self.floats + self.doubles,
+                [
+                    random.uniform(-(2**31), (2**31) - 1)
+                    for _ in range(len(self.floats) + len(self.doubles))
+                ],
+            )
+        )
+
+        values |= dict(
+            zip(
+                self.booleans,
+                [random.choice([True, False]) for _ in range(len(self.booleans))],
+            )
+        )
+        values |= dict(
+            zip(
+                self.binaries,
+                [
+                    self.fake.binary(length=len(self.binary_length))
+                    for _ in range(len(self.binaries))
+                ],
+            )
+        )
+        values |= dict(
+            zip(
+                self.dates,
+                [self.fake.date_object() for _ in range(len(self.dates))],
+            )
+        )
+        values |= dict(
+            zip(
+                self.timestamps,
+                [
+                    self.fake.date_time(self.timezone_info)
+                    for _ in range(len(self.timestamps))
+                ],
+            )
+        )
+        values |= dict(
+            zip(
+                self.timestamp_ntz_s,
+                [self.fake.date_time() for _ in range(len(self.timestamp_ntz_s))],
+            )
+        )
 
         return values

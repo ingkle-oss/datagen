@@ -23,16 +23,16 @@ def encode(value: dict | str, type: str):
 
 
 def csv_loads(value: str, headers: list[str]):
-    row = []
+    vals = []
     for v in value.strip().split(","):
         if v == "":
-            row.append(None)
+            vals.append(None)
         elif check_float(v):
-            row.append(float(v))
+            vals.append(float(v))
         else:
-            row.append(v)
+            vals.append(v)
 
-    return dict(zip(headers, row))
+    return {k: v for k, v in dict(zip(headers, vals)).items() if v is not None}
 
 
 def load_rows(filepath: str, filetype: str) -> list[dict] | list[str]:
@@ -49,11 +49,14 @@ def load_rows(filepath: str, filetype: str) -> list[dict] | list[str]:
             elif filetype == "csv":
                 headers = f.readline().strip().split(",")
                 while line := f.readline():
-                    if not line:
+                    if not line.strip():
                         break
 
                     row = csv_loads(line, headers)
-                    rows.append(dict(zip(headers, row)))
+                    if not row:
+                        continue
+
+                    rows.append(row)
 
     return rows
 

@@ -12,14 +12,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # File
-    parser.add_argument(
-        "--s3-endpoint",
-        help="S3 url",
-        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
-    )
-    parser.add_argument("--s3-accesskey", help="S3 accesskey")
-    parser.add_argument("--s3-secretkey", help="S3 secretkey")
-    parser.add_argument("--filepath", help="file to be produced", required=True)
+    parser.add_argument("--input-filepath", help="file to be produced", required=True)
     parser.add_argument(
         "--input-type",
         help="Input file type",
@@ -27,23 +20,31 @@ if __name__ == "__main__":
         default="jsonl",
     )
     parser.add_argument(
+        "--s3-endpoint",
+        help="S3 url",
+        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
+    )
+    parser.add_argument("--s3-accesskey", help="S3 accesskey")
+    parser.add_argument("--s3-secretkey", help="S3 secretkey")
+
+    # Output
+    parser.add_argument(
         "--output-type",
         help="Output file type",
         choices=["csv", "jsonl"],
         default="jsonl",
     )
-
     parser.add_argument(
         "--enable-timestamp",
         help="Enable timestamp",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True,
     )
     parser.add_argument(
         "--enable-date",
         help="Enable date",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True,
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -74,19 +75,9 @@ if __name__ == "__main__":
                 break
 
             for k, v in row.items():
-                # print(k, v)
-                if not isinstance(k, str) or not k:
-                    raise RuntimeError("Cannot predict schema because of empty key")
-
-                if v is None or v == "":
+                field = predict_field(k, v)
+                if field is None:
                     continue
-
-                try:
-                    field = predict_field(k, v)
-                except Exception as e:
-                    raise RuntimeError(
-                        "Cannot predict schema because it has unrecognized value", e
-                    )
 
                 prev = [f for f in fields if f.name == k]
                 if prev:

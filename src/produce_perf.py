@@ -128,6 +128,13 @@ if __name__ == "__main__":
     )
 
     # File
+    parser.add_argument("--input-filepath", help="file to be produced", required=True)
+    parser.add_argument(
+        "--input-type",
+        help="Input file type",
+        choices=["csv", "jsonl", "bsonl"],
+        default="jsonl",
+    )
     parser.add_argument(
         "--s3-endpoint",
         help="S3 url",
@@ -135,14 +142,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--s3-accesskey", help="S3 accesskey")
     parser.add_argument("--s3-secretkey", help="S3 secretkey")
-
-    parser.add_argument("--filepath", help="file to be produced", required=True)
-    parser.add_argument(
-        "--input-type",
-        help="Input file type",
-        choices=["csv", "jsonl", "bsonl"],
-        default="jsonl",
-    )
 
     parser.add_argument("--loop-max", help="maximum loop count", type=int, default=1)
 
@@ -227,12 +226,12 @@ if __name__ == "__main__":
         for _ in range(args.rate):
             at = datetime.now(timezone.utc)
             rows.append(
-                {
+                values[row_idx]
+                | custom_rows
+                | {
                     "timestamp": int(timestamp_start.timestamp() * 1e6),
                     "created_at": at,
                     "updated_at": at,
-                    **custom_rows,
-                    **values[row_idx],
                 }
             )
             row_idx = (row_idx + 1) % len(values)

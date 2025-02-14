@@ -3,20 +3,11 @@
 import argparse
 import logging
 
-from utils.nazare import pipeline_create
-from utils.utils import download_s3file, load_rows
+from utils.nazare import pipeline_create, load_schema_file
+from utils.utils import download_s3file
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
-    # File
-    parser.add_argument(
-        "--s3-endpoint",
-        help="S3 url",
-        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
-    )
-    parser.add_argument("--s3-accesskey", help="S3 accesskey")
-    parser.add_argument("--s3-secretkey", help="S3 secretkey")
 
     # NZStore REST API
     parser.add_argument(
@@ -43,17 +34,21 @@ if __name__ == "__main__":
         default=False,
     )
 
-    parser.add_argument(
-        "--schema-file",
-        help="Schema file",
-        required=True,
-    )
+    # File
+    parser.add_argument("--schema-file", help="Schema file", required=True)
     parser.add_argument(
         "--schema-file-type",
         help="Schema file type",
         choices=["csv", "jsonl", "bsonl"],
         default="json",
     )
+    parser.add_argument(
+        "--s3-endpoint",
+        help="S3 url",
+        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
+    )
+    parser.add_argument("--s3-accesskey", help="S3 accesskey")
+    parser.add_argument("--s3-secretkey", help="S3 secretkey")
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -74,7 +69,7 @@ if __name__ == "__main__":
         args.store_api_username,
         args.store_api_password,
         args.pipeline_name,
-        load_rows(schema_file, args.schema_file_type),
+        load_schema_file(schema_file, args.schema_file_type),
         args.pipeline_deltasync_enabled,
         args.pipeline_retention,
         logger=logging,

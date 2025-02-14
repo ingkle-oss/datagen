@@ -1,12 +1,13 @@
 #!python
 
-import re
 import logging
-import requests
+import re
+from typing import Literal
 
+import requests
 from pydantic import BaseModel, TypeAdapter
 
-from typing import Literal
+from utils.utils import load_rows
 
 
 class Field(BaseModel):
@@ -63,7 +64,7 @@ def pipeline_create(
     store_api_username: str,
     store_api_password: str,
     pipeline_name: str,
-    fields: list[dict],
+    fields: list[Field],
     enable_deltasync: bool = False,
     delete_retention: str = "",
     logger: logging.Logger = logging,
@@ -84,7 +85,7 @@ def pipeline_create(
         raise RuntimeError(f"Invalid table name: {pipeline_name}")
 
     fields_create = []
-    for field in TypeAdapter(list[Field]).validate_python(fields):
+    for field in fields:
         fields_create.append(field.model_dump(exclude_none=True))
 
     if logger.root.level <= logging.DEBUG:
@@ -158,12 +159,30 @@ def predict_field(key: str, val: any) -> Field:
         bool: "boolean",
         bytes: "binary",
     }
-    return Field(name=key, type=mapping[type(val)])
+
+    if not isinstance(key, str) or not key:
+        raise RuntimeError("Cannot predict schema because of empty key")
+
+    if val is None or val == "":
+        return None
+
+    try:
+        return Field(name=key, type=mapping[type(val)])
+    except Exception as e:
+        raise RuntimeError("Cannot predict schema because it has unrecognized value", e)
 
 
-def predict_fields(kvs: dict) -> list[Field]:
-    fields = []
-    for k, v in kvs.items():
-        fields.append(predict_field(k, v))
+def load_schema_file(schema_file: str, schema_file_type: str) -> list[Field]:
+    rows = load_rows(schema_file, schema_file_type)
+    if len(rows) > 1000:
+        raise RuntimeError(f"Too many rows in the schema file: {len(rows)}")
+
+    fields = TypeAdapter(list[Field]).validate_python(
+        load_rows(schema_file, schema_file_type)
+    )
+    if "timestamp" not in [field.name for field in fields] or "date" not in [
+        field.name for field in fields
+    ]:
+        raise RuntimeError("Schema file must have 'timestamp' and 'date' fields")
 
     return fields

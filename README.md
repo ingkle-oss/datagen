@@ -27,13 +27,13 @@ python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-s
  python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0--kafka-report-interval 1 --use-postgresql-edge --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-edge-id EDGE_ID
 
 # Produce a file
-python3 src/produce_file.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --filepath ./samples/loop.jsonl
+python3 src/produce_file.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --input-filepath ./samples/loop.jsonl
 
 # Post fake data to pandas http
 python3 src/pandas_http_fake.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic --rate 1 ---rate-interval 1.0
 
 # Post a file to pandas http
-python3 src/pandas_http_file.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic --filepath ./samples/loop.jsonl --rate 1 ---rate-interval 1.0
+python3 src/pandas_http_file.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic --input-filepath ./samples/loop.jsonl --rate 1 ---rate-interval 1.0
 ```
 
 Run MQTT publisher
@@ -46,7 +46,7 @@ python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-u
  python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1 ---rate-interval 1.0 --use-postgresql-store --postgresql-host POSTGRESQL_HOST --postgresql-port POSTGRESQL_PORT --postgresql-username POSTGRESQL_USERNAME --postgresql-password POSTGRESQL_PASSWORD --postgresql-database POSTGRESQL_DB --postgresql-table POSTGRESQL_TABLE --postgresql-store-table-name SCHEMA_TABLE_NAME
 
 # Publish a file
- python3 src/publish_file.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1 ---rate-interval 1.0 --filepath loop.jsonl
+ python3 src/publish_file.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure --rate 1 ---rate-interval 1.0 --input-filepath loop.jsonl
 ```
 
 Create, Delete a Nazare pipeline

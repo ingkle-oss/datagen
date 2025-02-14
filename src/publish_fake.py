@@ -317,15 +317,14 @@ if __name__ == "__main__":
                 continue
 
             elapsed = 0
-            loop_start = datetime.now(timezone.utc)
+            start_time = datetime.now(timezone.utc)
             for _ in range(args.rate):
                 row = {
                     "timestamp": int(
-                        (loop_start + timedelta(seconds=elapsed)).timestamp() * 1e6
-                    ),
-                    **custom_rows,
-                    **fake.values(),
+                        (start_time + timedelta(seconds=elapsed)).timestamp() * 1e6
+                    )
                 }
+                row = row | fake.values() | custom_rows
 
                 try:
                     ret = mqttc.publish(
@@ -345,7 +344,7 @@ if __name__ == "__main__":
 
                 elapsed += interval
 
-            wait = elapsed - (datetime.now(timezone.utc) - loop_start).total_seconds()
+            wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
             wait = 0.0 if wait < 0 else wait
             time.sleep(wait)
     finally:
