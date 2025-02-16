@@ -10,10 +10,10 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 import requests
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
+import urllib3
 
-from utils.utils import download_s3file, encode, eval_create_func, LoadRows
-from utils.nazare import pipeline_create, load_schema_file
+from utils.nazare import RowTransformer, load_schema_file, pipeline_create
+from utils.utils import LoadRows, download_s3file, encode, eval_create_func
 
 INCREMENTAL_IDX = 0
 INTERVAL_DIFF_PREV = None
@@ -131,7 +131,7 @@ if __name__ == "__main__":
         "--schema-file-type",
         help="Schema file type",
         choices=["csv", "jsonl", "bsonl"],
-        default="json",
+        default="jsonl",
     )
     parser.add_argument(
         "--s3-endpoint",
@@ -149,10 +149,22 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-rows",
+        "--custom-row",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
+    )
+    parser.add_argument(
+        "--timestamp-enabled",
+        help="Enable timestamp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--date-enabled",
+        help="Enable date",
+        action=argparse.BooleanOptionalAction,
+        default=True,
     )
 
     # Rate
@@ -178,6 +190,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interval-field-diff",
         help="Use field(datetime) difference as interval between records",
+    )
+    parser.add_argument(
+        "--interval-field-diff-format",
+        help="Interval field difference format",
+        default="%Y-%m-%d %H:%M:%S",
     )
 
     # Other field options
@@ -253,41 +270,34 @@ if __name__ == "__main__":
             logger=logging,
         )
 
-    custom_rows = {}
-    for kv in args.custom_rows:
+    custom_row = {}
+    for kv in args.custom_row:
         key, val = kv.split("=")
-        custom_rows[key] = val
+        custom_row[key] = val
 
-    interval = args.interval
-    interval_field_divisor = 1.0
-    if args.interval_field:
-        if args.interval_field_unit == "second":
-            pass
-        elif args.interval_field_unit == "millisecond":
-            interval_field_divisor = 1e3
-        elif args.interval_field_unit == "microsecond":
-            interval_field_divisor = 1e6
-        elif args.interval_field_unit == "nanosecond":
-            interval_field_divisor = 1e9
-        else:
-            raise RuntimeError(
-                "Invalid interval field unit: %s", args.interval_field_unit
-            )
-        logging.info("Ignores ---interval")
-
-    INCREMENTAL_IDX = args.incremental_field_from
+    tf = RowTransformer(
+        args.incremental_field_from,
+        args.interval_field,
+        args.interval_field_unit,
+        args.interval_field_diff,
+        args.interval_field_diff_format,
+        args.incremental_field,
+        args.incremental_field_step,
+        args.datetime_field,
+        args.datetime_field_format,
+    )
 
     eval_func = None
     if args.eval_field and args.eval_field_expr:
         eval_func = eval_create_func(args.eval_field_expr)
 
-    filepath = args.filepath
+    filepath = args.input_filepath
     if filepath.startswith("s3a://"):
         filepath = download_s3file(
             filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
         )
 
-    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     scheme = "https" if args.redpanda_ssl else "http"
 
     with LoadRows(filepath, args.input_type) as rows:
@@ -296,41 +306,42 @@ if __name__ == "__main__":
             records = []
             start_time = datetime.now(timezone.utc)
             for _ in range(args.rate):
+                ts = start_time + timedelta(seconds=elapsed)
                 try:
                     row = next(rows)
                 except StopIteration:
                     rows.seek(0)
                     row = next(rows)
+                row, interval = tf.transform(row, ts, args.interval)
+                row = row | custom_row
 
-                row = custom_rows | row
-                if not row:
-                    logging.debug("No values to be produced")
-                    continue
+                if args.date_enabled:
+                    if "date" in row:
+                        del row["date"]
+                    row = {"date": ts.date()} | row
+                if args.timestamp_enabled:
+                    if "timestamp" in row:
+                        del row["timestamp"]
+                    row = {"timestamp": int(ts.timestamp() * 1e6)} | row
 
-                record, interval = create_record(
-                    args.kafka_partition,
-                    args.kafka_key,
-                    row,
-                    start_time + timedelta(seconds=elapsed),
-                    interval,
-                    args.interval_field,
-                    interval_field_divisor,
-                    args.interval_field_diff,
-                    args.incremental_field,
-                    args.incremental_field_step,
-                    args.datetime_field,
-                    args.datetime_field_format,
-                    args.eval_field,
-                    eval_func,
-                )
+                if args.kafka_key is None:
+                    record = dict(value=row, partition=args.kafka_partition)
+                else:
+                    record = dict(
+                        key=args.kafka_key.encode("utf-8"),
+                        value=row,
+                        partition=args.kafka_partition,
+                    )
                 records.append(record)
+
                 elapsed += interval if interval > 0 else 0
 
             res = requests.post(
                 url=(
-                    f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}"
+                    f"{scheme}://{args.redpanda_host}:{args.redpanda_port}"
                     f"/topics/{args.kafka_topic}"
                 ),
+                auth=(args.kafka_sasl_username, args.kafka_sasl_password),
                 data=encode({"records": records}, args.output_type),
                 headers={
                     "Content-Type": "application/vnd.kafka.json.v2+json",
@@ -339,9 +350,15 @@ if __name__ == "__main__":
                 verify=args.redpanda_verify,
             )
             res.raise_for_status()
-            logging.debug(encode({"records": records}, args.output_type))
+            logging.debug(
+                "%s, %s",
+                encode({"records": records}, args.output_type),
+                args.output_type,
+            )
             logging.info(
-                f"Total {len(records)} messages delivered: {json.dumps(res.json(), indent=2)}"
+                "Total %s messages delivered: %s",
+                len(records),
+                json.dumps(res.json(), indent=2),
             )
 
             wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()

@@ -40,7 +40,7 @@ if __name__ == "__main__":
         "--schema-file-type",
         help="Schema file type",
         choices=["csv", "jsonl", "bsonl"],
-        default="json",
+        default="jsonl",
     )
     parser.add_argument(
         "--s3-endpoint",

@@ -6,7 +6,7 @@
 import argparse
 import logging
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from confluent_kafka import KafkaException, Producer
@@ -125,7 +125,7 @@ if __name__ == "__main__":
         "--schema-file-type",
         help="Schema file type",
         choices=["csv", "jsonl", "bsonl"],
-        default="json",
+        default="jsonl",
     )
     parser.add_argument(
         "--s3-endpoint",
@@ -143,10 +143,22 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-rows",
+        "--custom-row",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
+    )
+    parser.add_argument(
+        "--timestamp-enabled",
+        help="Enable timestamp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--date-enabled",
+        help="Enable date",
+        action=argparse.BooleanOptionalAction,
+        default=True,
     )
 
     # Rate
@@ -184,30 +196,20 @@ if __name__ == "__main__":
 
     # Faker
     parser.add_argument(
-        "--timestamp-enabled",
-        help="Enable timestamp",
-        action=argparse.BooleanOptionalAction,
-        default=True,
+        "--fake-string-length", help="Length of string field", type=int, default=10
     )
     parser.add_argument(
-        "--date-enabled",
-        help="Enable date",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    parser.add_argument(
-        "--string-length", help="Length of string field", type=int, default=10
-    )
-    parser.add_argument(
-        "--string-cardinality",
+        "--fake-string-cardinality",
         help="Number of string field cardinality",
         type=int,
         default=0,
     )
     parser.add_argument(
-        "--binary-length", help="Length of binary field", type=int, default=10
+        "--fake-binary-length", help="Length of binary field", type=int, default=10
     )
-    parser.add_argument("--datetime-timezone", help="Datetime timezone", default="UTC")
+    parser.add_argument(
+        "--fake-timestamp-tzinfo", help="Datetime timezone", default="UTC"
+    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -236,10 +238,10 @@ if __name__ == "__main__":
             logger=logging,
         )
 
-    custom_rows = {}
-    for kv in args.custom_rows:
+    custom_row = {}
+    for kv in args.custom_row:
         key, val = kv.split("=")
-        custom_rows[key] = val
+        custom_row[key] = val
 
     interval = args.interval
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
@@ -282,23 +284,27 @@ if __name__ == "__main__":
 
     fake = NZFakerField(
         fields,
-        args.string_length,
-        args.string_cardinality,
-        args.binary_length,
-        ZoneInfo(args.datetime_timezone),
+        args.fake_string_length,
+        args.fake_string_cardinality,
+        args.fake_binary_length,
+        ZoneInfo(args.fake_timestamp_tzinfo),
     )
 
     while True:
         elapsed = 0
         start_time = datetime.now(timezone.utc)
         for _ in range(args.rate):
-            ts = (start_time + timedelta(seconds=elapsed)).timestamp()
-            row = {}
-            if args.timestamp_enabled:
-                row["timestamp"] = int(ts * 1e6)
+            ts = start_time + timedelta(seconds=elapsed)
+            row = fake.values() | custom_row
+
             if args.date_enabled:
-                row["date"] = date.fromtimestamp(ts)
-            row = row | fake.values() | custom_rows
+                if "date" in row:
+                    del row["date"]
+                row = {"date": ts.date()} | row
+            if args.timestamp_enabled:
+                if "timestamp" in row:
+                    del row["timestamp"]
+                row = {"timestamp": int(ts.timestamp() * 1e6)} | row
 
             producer.poll(0)
             try:
@@ -309,7 +315,9 @@ if __name__ == "__main__":
                     partition=args.kafka_partition,
                     on_delivery=delivery_report,
                 )
-                logging.debug("Produced: %s:%s", args.kafka_key, row)
+                logging.debug(
+                    "Produced: %s:%s", args.kafka_key, encode(row, args.output_type)
+                )
             except KafkaException as e:
                 logging.error("KafkaException: %s", e)
 

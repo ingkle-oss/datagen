@@ -55,7 +55,7 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    filepath = args.filepath
+    filepath = args.input_filepath
     if filepath.startswith("s3a://"):
         filepath = download_s3file(
             filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint

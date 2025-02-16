@@ -91,7 +91,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-rows",
+        "--custom-row",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -159,10 +159,10 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    custom_rows = {}
-    for kv in args.custom_rows:
+    custom_row = {}
+    for kv in args.custom_row:
         key, val = kv.split("=")
-        custom_rows[key] = val
+        custom_row[key] = val
 
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
@@ -205,14 +205,14 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
-    filepath = args.filepath
+    filepath = args.input_filepath
     if filepath.startswith("s3a://"):
         filepath = download_s3file(
             filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
         )
 
     values = load_rows(filepath, args.input_type)
-    if not values and not custom_rows:
+    if not values and not custom_row:
         logging.warning("No values to be produced")
         exit(0)
 
@@ -227,7 +227,7 @@ if __name__ == "__main__":
             at = datetime.now(timezone.utc)
             rows.append(
                 values[row_idx]
-                | custom_rows
+                | custom_row
                 | {
                     "timestamp": int(timestamp_start.timestamp() * 1e6),
                     "created_at": at,

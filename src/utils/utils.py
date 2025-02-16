@@ -75,6 +75,8 @@ def load_rows(filepath: str, filetype: str) -> list[dict]:
                         continue
 
                     rows.append(row)
+            else:
+                raise RuntimeError(f"Unsupported file type: {filetype}")
 
     return rows
 

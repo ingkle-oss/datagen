@@ -510,7 +510,7 @@ class NZFakerField:
     binaries: list[str]
     dates: list[str]
     timestamps: list[str]
-    timezone_info: tzinfo
+    timestamp_tzinfo: timezone
     timestamp_ntz_s: list[str]
 
     string_choice: list[str]
@@ -524,7 +524,7 @@ class NZFakerField:
         str_length: int,
         str_cardinality: int,
         binary_length: int,
-        datetime_timezone=timezone.utc,
+        timestamp_tzinfo=timezone.utc,
     ):
         self.fake = Faker(use_weighting=False)
         self.fields = []
@@ -544,7 +544,7 @@ class NZFakerField:
         self.string_cardinality = 0 if str_cardinality < 0 else str_cardinality
         self.string_choice = []
         self.binary_length = 0 if binary_length < 0 else binary_length
-        self.timezone_info = datetime_timezone
+        self.timestamp_tzinfo = timestamp_tzinfo
 
         if self.string_cardinality > 0:
             self.string_choice = [
@@ -565,9 +565,6 @@ class NZFakerField:
             "timestamp_ntz": self.timestamp_ntz_s,
         }
         for field in fields:
-            if field.name == "timestamp" or field.name == "date":
-                continue
-
             maps[field.type].append(field.name)
 
     def values(self):
@@ -628,7 +625,7 @@ class NZFakerField:
             zip(
                 self.timestamps,
                 [
-                    self.fake.date_time(self.timezone_info)
+                    self.fake.date_time(self.timestamp_tzinfo)
                     for _ in range(len(self.timestamps))
                 ],
             )

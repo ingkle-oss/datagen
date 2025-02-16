@@ -3,13 +3,12 @@ import logging
 import signal
 import sys
 import time
-from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from ssl import create_default_context
 
 import paho.mqtt.client as mqtt
 
-from utils.nazare import pipeline_create, load_schema_file
+from utils.nazare import RowTransformer, load_schema_file, pipeline_create
 from utils.utils import LoadRows, download_s3file, encode, eval_create_func
 
 
@@ -28,74 +27,6 @@ def on_disconnect(client: mqtt.Client, userdata, flags, rc, properties):
 
     logging.info("MQTT Disconnection successful, userdata: %s", userdata)
     client.loop_stop()
-
-
-INCREMENTAL_IDX = 0
-
-
-def publish(
-    mqttc: mqtt.Client,
-    output_type: str,
-    topic: str,
-    qos: int,
-    values: dict,
-    epoch: datetime,
-    interval: float,
-    interval_field: str,
-    interval_field_divisor: float,
-    interval_field_diff: str,
-    incremental_field: str,
-    incremental_field_step: int,
-    datetime_field: str,
-    datetime_field_format: str,
-    eval_field: str,
-    eval_func: Callable,
-) -> float:
-    global INCREMENTAL_IDX
-
-    values = {k: v for k, v in values.items() if v is not None}
-
-    if interval_field and interval_field in values:
-        interval = values[interval_field] / interval_field_divisor
-    elif interval_field_diff and interval_field_diff in values:
-        global INTERVAL_DIFF_PREV
-        interval_diff = datetime.fromisoformat((values[interval_field_diff]))
-        if INTERVAL_DIFF_PREV:
-            interval = (interval_diff - INTERVAL_DIFF_PREV).total_seconds()
-            print(interval_diff, INTERVAL_DIFF_PREV, interval)
-        INTERVAL_DIFF_PREV = interval_diff
-
-    if incremental_field:
-        values[incremental_field] = INCREMENTAL_IDX
-        INCREMENTAL_IDX += incremental_field_step
-
-    if datetime_field and datetime_field_format:
-        values[datetime_field] = epoch.strftime(datetime_field_format)
-
-    if eval_field and eval_func:
-        values[eval_field] = eval_func(
-            **values,
-        )
-
-    row = {
-        "timestamp": int(epoch.timestamp() * 1e6),
-        **values,
-    }
-
-    try:
-        ret = mqttc.publish(
-            topic=topic,
-            payload=encode(row, output_type),
-            qos=qos,
-        )
-        ret.wait_for_publish()
-        logging.debug(
-            "Published mid: %s, return code: %s, row: %s", ret.mid, ret.rc, row
-        )
-    except RuntimeError as e:
-        logging.error("RuntimeError: %s", e)
-
-    return interval
 
 
 if __name__ == "__main__":
@@ -152,7 +83,7 @@ if __name__ == "__main__":
         "--schema-file-type",
         help="Schema file type",
         choices=["csv", "jsonl", "bsonl"],
-        default="json",
+        default="jsonl",
     )
     parser.add_argument(
         "--s3-endpoint",
@@ -171,10 +102,22 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--custom-rows",
+        "--custom-row",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
+    )
+    parser.add_argument(
+        "--timestamp-enabled",
+        help="Enable timestamp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--date-enabled",
+        help="Enable date",
+        action=argparse.BooleanOptionalAction,
+        default=True,
     )
 
     # Rate
@@ -200,6 +143,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interval-field-diff",
         help="Use field(datetime) difference as interval between records",
+    )
+    parser.add_argument(
+        "--interval-field-diff-format",
+        help="Interval field difference format",
+        default="%Y-%m-%d %H:%M:%S",
     )
 
     # Other field options
@@ -275,35 +223,28 @@ if __name__ == "__main__":
             logger=logging,
         )
 
-    custom_rows = {}
-    for kv in args.custom_rows:
+    custom_row = {}
+    for kv in args.custom_row:
         key, row = kv.split("=")
-        custom_rows[key] = row
+        custom_row[key] = row
 
-    interval = args.interval
-    interval_field_divisor = 1.0
-    if args.interval_field:
-        if args.interval_field_unit == "second":
-            pass
-        elif args.interval_field_unit == "millisecond":
-            interval_field_divisor = 1e3
-        elif args.interval_field_unit == "microsecond":
-            interval_field_divisor = 1e6
-        elif args.interval_field_unit == "nanosecond":
-            interval_field_divisor = 1e9
-        else:
-            raise RuntimeError(
-                "Invalid interval field unit: %s", args.interval_field_unit
-            )
-        logging.info("Ignores ---interval")
-
-    INCREMENTAL_IDX = args.incremental_field_from
+    tf = RowTransformer(
+        args.incremental_field_from,
+        args.interval_field,
+        args.interval_field_unit,
+        args.interval_field_diff,
+        args.interval_field_diff_format,
+        args.incremental_field,
+        args.incremental_field_step,
+        args.datetime_field,
+        args.datetime_field_format,
+    )
 
     eval_func = None
     if args.eval_field and args.eval_field_expr:
         eval_func = eval_create_func(args.eval_field_expr)
 
-    filepath = args.filepath
+    filepath = args.input_filepath
     if filepath.startswith("s3a://"):
         filepath = download_s3file(
             filepath, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
@@ -341,46 +282,46 @@ if __name__ == "__main__":
     mqttc.connect(host=args.mqtt_host, port=args.mqtt_port)
     mqttc.loop_start()
 
-    INCREMENTAL_IDX = 0
-    UNIQUE_ALT_PREV_VALUE = None
-    UNIQUE_ALT_IDX = 0
-
-    # For bigfile, load file one by one
     with LoadRows(filepath, args.input_type) as rows:
         try:
             while True:
                 elapsed = 0
                 start_time = datetime.now(timezone.utc)
                 for _ in range(args.rate):
+                    ts = start_time + timedelta(seconds=elapsed)
                     try:
                         row = next(rows)
                     except StopIteration:
                         rows.seek(0)
                         row = next(rows)
+                    row, interval = tf.transform(row, ts, args.interval)
+                    row = row | custom_row
 
-                    row = custom_rows | row
-                    if not row:
-                        logging.debug("No values to be produced")
-                        continue
+                    if args.date_enabled:
+                        if "date" in row:
+                            del row["date"]
+                        row = {"date": ts.date()} | row
+                    if args.timestamp_enabled:
+                        if "timestamp" in row:
+                            del row["timestamp"]
+                        row = {"timestamp": int(ts.timestamp() * 1e6)} | row
 
-                    interval = publish(
-                        mqttc,
-                        args.output_type,
-                        args.mqtt_topic,
-                        args.mqtt_qos,
-                        row,
-                        start_time + timedelta(seconds=elapsed),
-                        interval,
-                        args.interval_field,
-                        interval_field_divisor,
-                        args.interval_field_diff,
-                        args.incremental_field,
-                        args.incremental_field_step,
-                        args.datetime_field,
-                        args.datetime_field_format,
-                        args.eval_field,
-                        eval_func,
-                    )
+                    try:
+                        ret = mqttc.publish(
+                            topic=args.mqtt_topic,
+                            payload=encode(row, args.output_type),
+                            qos=args.mqtt_qos,
+                        )
+                        ret.wait_for_publish()
+                        logging.debug(
+                            "Published mid: %s, return code: %s, row: %s",
+                            ret.mid,
+                            ret.rc,
+                            encode(row, args.output_type),
+                        )
+                    except RuntimeError as e:
+                        logging.error("RuntimeError: %s", e)
+
                     elapsed += interval if interval > 0 else 0
 
                 wait = (

@@ -126,7 +126,7 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-rows",
+        "--custom-row",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
@@ -238,10 +238,10 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    custom_rows = {}
-    for kv in args.custom_rows:
+    custom_row = {}
+    for kv in args.custom_row:
         key, val = kv.split("=")
-        custom_rows[key] = val
+        custom_row[key] = val
 
     interval = args.interval
 
@@ -357,7 +357,7 @@ if __name__ == "__main__":
             fake.update_schema()
             prev = datetime.now(timezone.utc)
 
-        if not fake.get_schema() and not custom_rows:
+        if not fake.get_schema() and not custom_row:
             logging.warning("No schema found to be used or no custom key values")
             time.sleep(interval * args.rate)
             continue
@@ -370,7 +370,7 @@ if __name__ == "__main__":
                     (start_time + timedelta(seconds=elapsed)).timestamp() * 1e6
                 )
             }
-            row = fake.values() | custom_rows
+            row = fake.values() | custom_row
 
             producer.poll(0)
             try:

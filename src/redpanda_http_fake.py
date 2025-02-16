@@ -6,11 +6,11 @@ import argparse
 import json
 import logging
 import time
-from datetime import datetime, timedelta, timezone, date
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import requests
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
+import urllib3
 
 from utils.nazare import Field, load_schema_file, pipeline_create
 from utils.nzfake import NZFakerField
@@ -64,7 +64,7 @@ if __name__ == "__main__":
         "--schema-file-type",
         help="Schema file type",
         choices=["csv", "jsonl", "bsonl"],
-        default="json",
+        default="jsonl",
     )
     parser.add_argument(
         "--s3-endpoint",
@@ -82,10 +82,22 @@ if __name__ == "__main__":
         default="json",
     )
     parser.add_argument(
-        "--custom-rows",
+        "--custom-row",
         help="Custom key values (e.g. edge=test-edge)",
         nargs="*",
         default=[],
+    )
+    parser.add_argument(
+        "--timestamp-enabled",
+        help="Enable timestamp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--date-enabled",
+        help="Enable date",
+        action=argparse.BooleanOptionalAction,
+        default=True,
     )
 
     # Rate
@@ -123,30 +135,20 @@ if __name__ == "__main__":
 
     # Faker
     parser.add_argument(
-        "--timestamp-enabled",
-        help="Enable timestamp",
-        action=argparse.BooleanOptionalAction,
-        default=True,
+        "--fake-string-length", help="Length of string field", type=int, default=10
     )
     parser.add_argument(
-        "--date-enabled",
-        help="Enable date",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    parser.add_argument(
-        "--string-length", help="Length of string field", type=int, default=10
-    )
-    parser.add_argument(
-        "--string-cardinality",
+        "--fake-string-cardinality",
         help="Number of string field cardinality",
         type=int,
         default=0,
     )
     parser.add_argument(
-        "--binary-length", help="Length of binary field", type=int, default=10
+        "--fake-binary-length", help="Length of binary field", type=int, default=10
     )
-    parser.add_argument("--datetime-timezone", help="Datetime timezone", default="UTC")
+    parser.add_argument(
+        "--fake-timestamp-tzinfo", help="Datetime timezone", default="UTC"
+    )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -175,36 +177,40 @@ if __name__ == "__main__":
             logger=logging,
         )
 
-    custom_rows = {}
-    for kv in args.custom_rows:
+    custom_row = {}
+    for kv in args.custom_row:
         key, val = kv.split("=")
-        custom_rows[key] = val
+        custom_row[key] = val
 
     interval = args.interval
 
-    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-    scheme = "https" if args.redpanda_ssl else "http"
-
     fake = NZFakerField(
         fields,
-        args.string_length,
-        args.string_cardinality,
-        args.binary_length,
-        ZoneInfo(args.datetime_timezone),
+        args.fake_string_length,
+        args.fake_string_cardinality,
+        args.fake_binary_length,
+        ZoneInfo(args.fake_timestamp_tzinfo),
     )
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    scheme = "https" if args.redpanda_ssl else "http"
 
     while True:
         elapsed = 0
         records = []
         start_time = datetime.now(timezone.utc)
         for _ in range(args.rate):
-            ts = (start_time + timedelta(seconds=elapsed)).timestamp()
-            row = {}
-            if args.timestamp_enabled:
-                row["timestamp"] = int(ts * 1e6)
+            ts = start_time + timedelta(seconds=elapsed)
+            row = fake.values() | custom_row
+
             if args.date_enabled:
-                row["date"] = date.fromtimestamp(ts)
-            row = row | fake.values() | custom_rows
+                if "date" in row:
+                    del row["date"]
+                row = {"date": ts.date()} | row
+            if args.timestamp_enabled:
+                if "timestamp" in row:
+                    del row["timestamp"]
+                row = {"timestamp": int(ts.timestamp() * 1e6)} | row
 
             if args.kafka_key is None:
                 record = dict(value=row, partition=args.kafka_partition)
@@ -218,14 +224,24 @@ if __name__ == "__main__":
             elapsed += interval
 
         res = requests.post(
-            url=f"{scheme}://{args.kafka_sasl_username}:{args.kafka_sasl_password}@{args.redpanda_host}:{args.redpanda_port}/topics/{args.kafka_topic}",
+            url=(
+                f"{scheme}://{args.redpanda_host}:{args.redpanda_port}"
+                f"/topics/{args.kafka_topic}"
+            ),
+            auth=(args.kafka_sasl_username, args.kafka_sasl_password),
             data=encode({"records": records}, args.output_type),
-            headers={"Content-Type": "application/vnd.kafka.json.v2+json"},
+            headers={
+                "Content-Type": "application/vnd.kafka.json.v2+json",
+                "content-encoding": "gzip",
+            },
             verify=args.redpanda_verify,
-        ).json()
-        logging.debug(encode({"records": records}, args.output_type))
+        )
+        res.raise_for_status()
+        logging.debug("%s, %s", records, args.output_type)
         logging.info(
-            f"Total {len(records)} messages delivered: {json.dumps(res, indent=2)}"
+            "Total %s messages delivered: %s",
+            len(records),
+            json.dumps(res.json(), indent=2),
         )
 
         wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
