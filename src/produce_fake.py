@@ -26,15 +26,17 @@ def delivery_report(err, msg):
     global REPORT_COUNT
 
     if REPORT_COUNT >= args.kafka_report_interval:
-        REPORT_COUNT = 0
         logging.info(
-            "Message delivered to error=%s topic=%s partition=%s offset=%s latency=%s",
+            "Message delivered to error=%s topic=%s partition=%s offset=%s latency=%s, count=%s",
             msg.error(),
             msg.topic(),
             msg.partition(),
             msg.offset(),
             msg.latency(),
+            REPORT_COUNT,
         )
+        logging.debug("Message (%s): %s", msg.key(), msg.value())
+        REPORT_COUNT = 0
     REPORT_COUNT += 1
 
 
