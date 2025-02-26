@@ -275,6 +275,10 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         custom_row[key] = val
 
+    eval_func = None
+    if args.eval_field and args.eval_field_expr:
+        eval_func = eval_create_func(args.eval_field_expr)
+
     tf = RowTransformer(
         args.incremental_field_from,
         args.interval_field,
@@ -285,11 +289,9 @@ if __name__ == "__main__":
         args.incremental_field_step,
         args.datetime_field,
         args.datetime_field_format,
+        args.eval_field,
+        eval_func,
     )
-
-    eval_func = None
-    if args.eval_field and args.eval_field_expr:
-        eval_func = eval_create_func(args.eval_field_expr)
 
     filepath = args.input_filepath
     if filepath.startswith("s3a://"):

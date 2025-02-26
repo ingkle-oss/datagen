@@ -171,4 +171,6 @@ def eval_create_func(eval_field_expr: str) -> Callable:
         for node in ast.walk(ast.parse(eval_field_expr))
         if isinstance(node, ast.Name)
     ]
-    return eval("lambda " + ",".join(fields) + ",**kwargs" + ": " + eval_field_expr)
+    return eval(
+        "lambda " + ",".join(fields) + ",**kwargs" + ": " + eval_field_expr, {}, {}
+    )
