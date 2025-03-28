@@ -18,12 +18,14 @@ Run Kafka producer
 
 ```bash
 # Produce fake data
-python3 src/produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --kafka-report-interval 1 \
+python3 src/produce_fake.py \
+--kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --kafka-report-interval 1 \
 --schema-file samples/fake.schema.csv --schema-file-type csv \
 --output-type json
 
 # Post fake data to pandas http
-python3 src/pandas_http_fake.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic \
+python3 src/pandas_http_fake.py \
+--host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic \
 --schema-file samples/fake.schema.csv --schema-file-type csv \
 --output-type json
 
@@ -40,6 +42,15 @@ python3 src/pandas_http_file.py \
 --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic \
 --schema-file samples/fake.schema.csv --schema-file-type csv \
 --input-filepath samples/fake.json --input-type json --output-type json
+```
+
+Consumer Kafka data
+
+```bash
+python src/consumer_loop.py \
+--kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD \
+--kafka-topic fake_test --input-type json \
+--loglevel DEBUG
 ```
 
 Run MQTT publisher
