@@ -1,0 +1,90 @@
+[
+    {
+        "name": "timestamp",
+        "type": "timestamp",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "date",
+        "type": "date",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "integer@strong_3842",
+        "type": "integer",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "long@power_1546",
+        "type": "long",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "string@skin_4232",
+        "type": "string",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "float@really_4603",
+        "type": "float",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "double@go_102",
+        "type": "double",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "boolean@suggest_9936",
+        "type": "boolean",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "date@send_6692",
+        "type": "date",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "timestamp@respond_7172",
+        "type": "timestamp",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    },
+    {
+        "name": "timestamp_ntz@lawyer_2441",
+        "type": "timestamp_ntz",
+        "subtype": "",
+        "nullable": "True",
+        "comment": "",
+        "alias": ""
+    }
+]

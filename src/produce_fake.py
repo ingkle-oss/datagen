@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from confluent_kafka import KafkaException, Producer
 
-from utils.nazare import Field, load_schema_file, pipeline_create
+from utils.nazare import Field, nz_load_fields, nz_pipeline_create
 from utils.nzfake import NZFakerField
 from utils.utils import download_s3file, encode
 
@@ -226,10 +226,10 @@ if __name__ == "__main__":
         schema_file = download_s3file(
             schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
         )
-    fields: list[Field] = load_schema_file(schema_file, args.schema_file_type)
+    fields: list[Field] = nz_load_fields(schema_file, args.schema_file_type)
 
     if args.store_api_url and args.store_api_username and args.store_api_password:
-        pipeline_create(
+        nz_pipeline_create(
             args.store_api_url,
             args.store_api_username,
             args.store_api_password,

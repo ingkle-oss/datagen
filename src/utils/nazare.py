@@ -1,16 +1,22 @@
 #!python
 
+import ast
+import enum
 import logging
 import re
+import struct
 from datetime import datetime
 from typing import Callable, Literal
 
 import requests
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, BeforeValidator, TypeAdapter
+from typing_extensions import Annotated
 
 from utils.utils import load_rows
+from utils.utils import encode, decode
 
 
+# * Field
 class Field(BaseModel):
     name: str
     type: Literal[
@@ -29,6 +35,377 @@ class Field(BaseModel):
     nullable: bool = True
     comment: str | None = None
     alias: str | None = None
+
+
+# * Edge
+
+
+class EdgeDataSpecType(str, enum.Enum):
+    ANALOG = "ANALOG"
+    DIGITAL = "DIGITAL"
+    TEXT = "TEXT"
+
+
+STRUCT_FMT = {
+    "c": int,
+    "b": int,
+    "B": int,
+    "?": bool,
+    "h": int,
+    "H": int,
+    "i": int,
+    "I": int,
+    "l": int,
+    "L": int,
+    "q": int,
+    "Q": int,
+    "f": float,
+    "d": float,
+    "s": str,
+    "p": str,
+}
+
+
+def _validate_format(val: str) -> str:
+    fmt = val[-1:]
+    if fmt not in STRUCT_FMT:
+        raise ValueError(f"Invalid format: {val}")
+
+    return val
+
+
+class EdgeDataSpec(BaseModel):
+    edgeId: str
+    edgeDataSourceId: str
+    edgeDataSpecId: str
+    type: EdgeDataSpecType
+    format: Annotated[str, BeforeValidator(_validate_format)]
+    size: int
+    bits: list[str | None] | None = None
+    index: int
+    is_null: bool
+
+
+def _validate_obj(val: str | dict) -> dict:
+    if isinstance(val, dict):
+        return val
+    return ast.literal_eval(val)
+
+
+class EdgeDataSource(BaseModel):
+    edgeId: str | None = None
+    edgeDataSourceId: str
+    name: str
+    type: str
+    orderIndex: int | None = None
+    period: int
+    charEncoding: str | None = None
+    directPass: bool | None = None
+    payload: Annotated[dict, BeforeValidator(_validate_obj)]
+    server: Annotated[dict, BeforeValidator(_validate_obj)]
+    wordOrder: str
+    readBlock: Annotated[list, BeforeValidator(_validate_obj)] | None = None
+    usedByteIndexes: Annotated[list, BeforeValidator(_validate_obj)] | None = None
+    unitNumber: int | None = None
+    registerType: str | None = None
+
+
+def _encode_value(spec: EdgeDataSpec, row: dict) -> list[int]:
+    if spec.is_null:
+        return [0]
+
+    values = []
+    if spec.type == EdgeDataSpecType.DIGITAL and spec.bits:
+        bits = 0
+        for bit in reversed(spec.bits):
+            if bit and row.get(spec.edgeDataSpecId + "@" + bit, 0) in [
+                "true",
+                "True",
+                "1",
+                1,
+            ]:
+                bit = 1
+            else:
+                bit = 0
+
+            bits = (bits << 1) | bit
+
+        # Convert to Signed integer value
+        if spec.format == "c":
+            bits = bits | (-(bits & 0x80))
+        elif spec.format == "h":
+            bits = bits | (-(bits & 0x8000))
+        elif spec.format == "i":
+            bits = bits | (-(bits & 0x80000000))
+        elif spec.format == "q":
+            bits = bits | (-(bits & 0x8000000000000000))
+        else:
+            logging.error(
+                "Unsupported format for bits, use 0 value, spec_id: %s, format: %s, bit: %s",
+                spec.edgeDataSpecId,
+                spec.format,
+                bit,
+            )
+            return [0]
+
+        values.append(bits)
+    else:
+        value = row.get(spec.edgeDataSpecId, None)
+        if value is None:
+            return [0]
+
+        value = STRUCT_FMT.get(spec.format[-1:], float)(value)
+        if (
+            spec.format.endswith("c")
+            or spec.format.endswith("s")
+            or spec.format.endswith("p")
+        ):
+            try:
+                value = str(value).encode("utf-8")
+            except UnicodeEncodeError:
+                logging.error(
+                    "Encoding error, spec_id: %s, format: %s, value: %s",
+                    spec.edgeDataSpecId,
+                    spec.format,
+                    value,
+                )
+                value = ""
+
+        values.append(value)
+
+    return values
+
+
+def nz_edge_encode(row: dict, dataspecs: dict[str, list[EdgeDataSpec]]) -> bytes:
+    values: dict[str, bytes] = {}
+    for src, specs in dataspecs.items():
+        format = ""
+        _vals = []
+        for spec in sorted(specs, key=lambda x: x.index):
+            format += spec.format
+            val = _encode_value(spec, row)
+            if val is None:
+                continue
+            _vals.extend(val)
+        values[src] = struct.pack(format, *_vals)
+    return encode(values, "bson")
+
+
+TRIAGE_PREFIX = "__triage__@"
+
+
+def _decode_value(spec: EdgeDataSpec, value: any) -> dict:
+    if value is None or spec.is_null:
+        return {}
+
+    values = {}
+    if spec.type == EdgeDataSpecType.DIGITAL and spec.bits:
+        # Convert to unsigned integer
+        if spec.format == "c":
+            value = value + (1 << 8)
+        elif spec.format == "h":
+            value = value + (1 << 16)
+        elif spec.format == "i":
+            value = value + (1 << 32)
+        elif spec.format == "q":
+            value = value + (1 << 64)
+        else:
+            logging.error(
+                "Unsupported format for bits, use 0 value, spec_id: %s, format: %s, value: %s",
+                spec.edgeDataSpecId,
+                spec.format,
+                value,
+            )
+            return {TRIAGE_PREFIX + spec.edgeDataSpecId: value}
+
+        for bit in spec.bits:
+            if bit:
+                values[spec.edgeDataSpecId + "@" + bit] = bool(value & 0b1)
+            value = value >> 1
+    else:
+        if (
+            spec.format.endswith("c")
+            or spec.format.endswith("s")
+            or spec.format.endswith("p")
+        ):
+            try:
+                values[spec.edgeDataSpecId] = STRUCT_FMT.get(spec.format[-1:], float)(
+                    value.decode("utf-8")
+                )
+            except UnicodeDecodeError:
+                logging.error(
+                    "Decoding error, spec_id: %s, format: %s, value: %s",
+                    spec.edgeDataSpecId,
+                    spec.format,
+                    value,
+                )
+                return {TRIAGE_PREFIX + spec.edgeDataSpecId: value}
+        else:
+            values[spec.edgeDataSpecId] = STRUCT_FMT.get(spec.format[-1:], float)(value)
+
+    return values
+
+
+def nz_edge_decode(row: dict, dataspecs: dict[str, list[EdgeDataSpec]]) -> dict:
+    values = {}
+    for src_id, packed in decode(row, "bson").items():
+        if packed is None:
+            continue
+
+        if src_id == "timestamp":
+            continue
+
+        specs = dataspecs[src_id]
+        format = "".join([spec.format for spec in specs])
+        unpacked = struct.unpack(format, packed)
+
+        logging.debug("unpacked: %s", unpacked)
+        for idx, spec in enumerate(specs):
+            values.update(_decode_value(spec, unpacked[idx]))
+
+    return values
+
+
+def _split(formats, format, prefix=None):
+    for fmt in re.findall(r"\d+|\D+", format):
+        if fmt.isdigit():
+            prefix = int(fmt)
+            continue
+
+        val = fmt[0]
+        if prefix is not None:
+            if val == "s" or val == "p":
+                formats.append(f"{prefix}{val}")
+            else:
+                formats.extend([val] * prefix)
+            prefix = None
+        else:
+            formats.append(val)
+
+        if len(fmt[1:]) > 0:
+            _split(formats, fmt[1:], prefix)
+
+    return formats
+
+
+def _split_payload_format(format):
+    if not format:
+        return []
+
+    if format[0] in ("@", "=", "<", ">", "!"):
+        format = format[1:]
+
+    formats = []
+    return _split(formats, format)
+
+
+def _format_to_spec_type(format) -> EdgeDataSpecType:
+    return {
+        "s": EdgeDataSpecType.TEXT,
+        "p": EdgeDataSpecType.TEXT,
+    }.get(format[-1:], EdgeDataSpecType.ANALOG)
+
+
+def nz_edge_load_sources(file: str, file_type: str) -> list[EdgeDataSource]:
+    rows = load_rows(file, file_type)
+    if len(rows) > 1000:
+        raise RuntimeError(f"Too many rows in the edge schema file: {len(rows)}")
+
+    sources = []
+    for row in rows:
+        sources.append(EdgeDataSource.model_validate(row))
+
+    return sources
+
+
+def _datasource_to_dataspecs(datasource: EdgeDataSource) -> list[EdgeDataSpec]:
+    # ! Legacy format, fields, digitalFields
+    formats = _split_payload_format(datasource.payload.get("format", []))
+    fields = datasource.payload.get("fields", [])
+    digital_fields = datasource.payload.get("digitalFields", [])
+
+    data_specs = []
+    index = 0
+    for format, field in zip(formats, fields):
+        bits = None
+        if not field:
+            field = f"v{index}"
+            spec_type = None
+            is_null = True
+        else:
+            for digital_field in digital_fields:
+                if digital_field["field"] == field:
+                    bits = digital_field["bits"]
+                    break
+
+            if bits:
+                spec_type = EdgeDataSpecType.DIGITAL
+            else:
+                spec_type = _format_to_spec_type(format)
+
+            is_null = False
+
+        data_specs.append(
+            EdgeDataSpec(
+                edgeId=datasource.edgeId,
+                edgeDataSourceId=datasource.edgeDataSourceId,
+                edgeDataSpecId=f"{datasource.edgeDataSourceId}@{field}",
+                type=spec_type,
+                format=format,
+                size=struct.calcsize(format),
+                bits=bits,
+                index=index,
+                is_null=is_null,
+            )
+        )
+        index += 1
+
+    return data_specs
+
+
+def nz_edge_load_specs(file: str, file_type: str) -> dict[str, list[EdgeDataSpec]]:
+    datasources = nz_edge_load_sources(file, file_type)
+    dataspecs = {}
+    for datasource in datasources:
+        dataspecs[datasource.edgeDataSourceId] = _datasource_to_dataspecs(datasource)
+
+    return dataspecs
+
+
+def nz_predict_field(key: str, val: any) -> Field:
+    mapping = {
+        # int: "integer",
+        int: "double",  # if lack of sample data, it is hard to predict integer
+        str: "string",
+        float: "double",
+        bool: "boolean",
+        bytes: "binary",
+    }
+
+    if not isinstance(key, str) or not key:
+        raise RuntimeError("Cannot predict schema because of empty key")
+
+    if val is None or val == "":
+        return None
+
+    try:
+        return Field(name=key, type=mapping[type(val)])
+    except Exception as e:
+        raise RuntimeError("Cannot predict schema because it has unrecognized value", e)
+
+
+def nz_load_fields(file: str, file_type: str) -> list[Field]:
+    rows = load_rows(file, file_type)
+    if len(rows) > 1000:
+        raise RuntimeError(f"Too many rows in the schema file: {len(rows)}")
+
+    fields = TypeAdapter(list[Field]).validate_python(rows)
+    if "timestamp" not in [field.name for field in fields] or "date" not in [
+        field.name for field in fields
+    ]:
+        raise RuntimeError("Schema file must have 'timestamp' and 'date' fields")
+
+    return fields
 
 
 def _pipeline_check(
@@ -60,12 +437,14 @@ def _pipeline_check(
     )
 
 
-def pipeline_create(
+def nz_pipeline_create(
     store_api_url: str,
     store_api_username: str,
     store_api_password: str,
     pipeline_name: str,
-    fields: list[Field],
+    schema_file_type,
+    schema_file,
+    ingest_type: str = Literal["KAFKA", "EDGE"],
     enable_deltasync: bool = False,
     delete_retention: str = "",
     logger: logging.Logger = logging,
@@ -85,28 +464,39 @@ def pipeline_create(
     if re.match(r"^[a-z0-9_]+$", pipeline_name) is None:
         raise RuntimeError(f"Invalid table name: {pipeline_name}")
 
-    fields_create = []
-    for field in fields:
-        fields_create.append(field.model_dump(exclude_none=True))
-
-    if logger.root.level <= logging.DEBUG:
-        logger.debug("Fields:")
-        for field in fields_create:
-            logger.debug(field)
-
     data = {
         "name": pipeline_name,
         "alias": pipeline_name,
-        "ingest_type": "KAFKA",
+        "ingest_type": ingest_type,
         "deltasync_enabled": enable_deltasync,
         "table_create": {
             "name": pipeline_name,
             "alias": pipeline_name,
             "partitions": ["date"],
             "delete_retention": delete_retention,
-            "fields_create": fields_create,
         },
     }
+
+    if ingest_type == "EDGE":
+        data["edge_create"] = {
+            "edgeId": pipeline_name,
+            "type": "EXTERNAL",
+        }
+
+        datasources: list[EdgeDataSource] = []
+        for src in nz_edge_load_sources(schema_file, schema_file_type):
+            src.edgeId = None  # Remove for creating
+            datasources.append(src.model_dump(exclude_none=True))
+
+        data["edge_create"]["datasources_create"] = datasources
+    elif ingest_type == "KAFKA":
+        fields = []
+        for field in nz_load_fields(schema_file, schema_file_type):
+            fields.append(field.model_dump(exclude_none=True))
+
+        data["table_create"]["fields_create"] = fields
+    else:
+        raise RuntimeError(f"Invalid ingest type: {ingest_type}")
 
     session = requests.Session()
     session.auth = (store_api_username, store_api_password)
@@ -121,7 +511,7 @@ def pipeline_create(
     logger.info("Pipeline is created: %s", pipeline_name)
 
 
-def pipeline_delete(
+def nz_pipeline_delete(
     store_api_url: str,
     store_api_username: str,
     store_api_password: str,
@@ -151,45 +541,7 @@ def pipeline_delete(
     logger.info("Pipeline is deleted: %s", pipeline_name)
 
 
-def predict_field(key: str, val: any) -> Field:
-    mapping = {
-        # int: "integer",
-        int: "double",  # if lack of sample data, it is hard to predict integer
-        str: "string",
-        float: "double",
-        bool: "boolean",
-        bytes: "binary",
-    }
-
-    if not isinstance(key, str) or not key:
-        raise RuntimeError("Cannot predict schema because of empty key")
-
-    if val is None or val == "":
-        return None
-
-    try:
-        return Field(name=key, type=mapping[type(val)])
-    except Exception as e:
-        raise RuntimeError("Cannot predict schema because it has unrecognized value", e)
-
-
-def load_schema_file(schema_file: str, schema_file_type: str) -> list[Field]:
-    rows = load_rows(schema_file, schema_file_type)
-    if len(rows) > 1000:
-        raise RuntimeError(f"Too many rows in the schema file: {len(rows)}")
-
-    fields = TypeAdapter(list[Field]).validate_python(
-        load_rows(schema_file, schema_file_type)
-    )
-    if "timestamp" not in [field.name for field in fields] or "date" not in [
-        field.name for field in fields
-    ]:
-        raise RuntimeError("Schema file must have 'timestamp' and 'date' fields")
-
-    return fields
-
-
-class RowTransformer:
+class NzRowTransformer:
     incremental_idx = 0
     interval_field_prev = None
 
@@ -255,13 +607,11 @@ class RowTransformer:
                 row[self.interval_field_diff], self.interval_field_diff_format
             )
             if self.interval_field_prev:
-                print(interval_diff, self.interval_field_prev)
                 if interval_diff >= self.interval_field_prev:
                     interval = (
                         interval_diff - self.interval_field_prev
                     ).total_seconds()
             self.interval_field_prev = interval_diff
-        print(interval)
 
         if self.incremental_field:
             row[self.incremental_field] = self.incremental_idx

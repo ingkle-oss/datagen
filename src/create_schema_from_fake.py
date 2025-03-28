@@ -5,7 +5,7 @@ import csv
 import io
 import logging
 
-from utils.nazare import Field, predict_field
+from utils.nazare import Field, nz_predict_field
 from utils.utils import LoadRows, download_s3file
 
 if __name__ == "__main__":

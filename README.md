@@ -28,12 +28,16 @@ python3 src/pandas_http_fake.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_POR
 --output-type json
 
 # Produce a file
-python3 src/produce_file.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic \
---schema-file samples/fake.schema.csv --schema-file-type csv \
---input-filepath samples/fake.json --input-type json --output-type json
+python3 src/produce_file.py \
+--kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD \
+--kafka-topic fake_test \
+--input-filepath samples/fake.jsonl --input-type jsonl --output-type json \
+--kafka-report-interval 1 \
+--loglevel DEBUG
 
 # Post a file to pandas http
-python3 src/pandas_http_file.py --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic \
+python3 src/pandas_http_file.py \
+--host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic \
 --schema-file samples/fake.schema.csv --schema-file-type csv \
 --input-filepath samples/fake.json --input-type json --output-type json
 ```

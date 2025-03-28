@@ -12,7 +12,12 @@ from datetime import datetime, timedelta, timezone
 import requests
 import urllib3
 
-from utils.nazare import RowTransformer, load_schema_file, pipeline_create
+from utils.nazare import (
+    NzRowTransformer,
+    nz_edge_encode,
+    nz_edge_load_specs,
+    nz_pipeline_create,
+)
 from utils.utils import LoadRows, download_s3file, encode, eval_create_func
 
 INCREMENTAL_IDX = 0
@@ -123,15 +128,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input-type",
         help="Input file type",
-        choices=["csv", "jsonl", "bsonl"],
-        default="jsonl",
-    )
-    parser.add_argument("--schema-file", help="Schema file")
-    parser.add_argument(
-        "--schema-file-type",
-        help="Schema file type",
-        choices=["csv", "jsonl", "bsonl"],
-        default="jsonl",
+        choices=["csv", "json", "jsonl", "bson"],
+        default="json",
     )
     parser.add_argument(
         "--s3-endpoint",
@@ -145,7 +143,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-type",
         help="Output message type",
-        choices=["csv", "json", "bson"],
+        choices=["csv", "json", "bson", "txt", "edge"],
         default="json",
     )
     parser.add_argument(
@@ -218,21 +216,32 @@ if __name__ == "__main__":
     parser.add_argument("--eval-field", help="Evaluated field")
     parser.add_argument("--eval-field-expr", help="Evaluated field expression")
 
-    # NZStore REST API
+    # Nazare Specific Options
     parser.add_argument(
-        "--store-api-url",
-        help="Store API URL",
+        "--nz-create-pipeline",
+        help="Create Nazare pipeline",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--nz-schema-file", help="Nazare Schema file")
+    parser.add_argument(
+        "--nz-schema-file-type",
+        help="Nazare Schema file type",
+        choices=["csv", "json", "jsonl", "bson"],
+        default="jsonl",
+    )
+    parser.add_argument(
+        "--nz-api-url",
+        help="Nazare Store API URL",
         default="http://nzstore.nzstore.svc.cluster.local:8000/api/v1/pipelines",
     )
-    parser.add_argument("--store-api-username", help="Store API username")
-    parser.add_argument("--store-api-password", help="Store API password")
-
-    # NZStore pipeline
+    parser.add_argument("--nz-api-username", help="Nazare Store API username")
+    parser.add_argument("--nz-api-password", help="Nazare Store API password")
     parser.add_argument(
-        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
+        "--nz-pipeline-retention", help="Retention (e.g. 60,d)", default=""
     )
     parser.add_argument(
-        "--pipeline-deltasync-enabled",
+        "--nz-pipeline-deltasync-enabled",
         help="Enable deltasync",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -246,29 +255,43 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    if (
-        args.store_api_url
-        and args.store_api_username
-        and args.store_api_password
-        and args.schema_file
-        and args.schema_file_type
-    ):
-        schema_file = args.schema_file
+    schema_file = None
+    if args.nz_schema_file and args.nz_schema_file_type:
+        schema_file = args.nz_schema_file
         if schema_file.startswith("s3a://"):
             schema_file = download_s3file(
                 schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
             )
 
-        pipeline_create(
-            args.store_api_url,
-            args.store_api_username,
-            args.store_api_password,
+    if args.nz_create_pipeline:
+        if not schema_file:
+            raise RuntimeError(
+                "Please provide both --nz-schema-file and --nz-schema-file-type to create pipeline that requires schema file"
+            )
+
+        if not args.nz_api_url or not args.nz_api_username or not args.nz_api_password:
+            raise RuntimeError("Nazare API credentials are required")
+
+        nz_pipeline_create(
+            args.nz_api_url,
+            args.nz_api_username,
+            args.nz_api_password,
             args.kafka_topic,
-            load_schema_file(schema_file, args.schema_file_type),
-            args.pipeline_deltasync_enabled,
-            args.pipeline_retention,
+            args.nz_schema_file_type,
+            schema_file,
+            "EDGE" if args.output_type == "edge" else "KAFKA",
+            args.nz_pipeline_deltasync_enabled,
+            args.nz_pipeline_retention,
             logger=logging,
         )
+
+    dataspecs = []
+    if args.output_type == "edge":
+        if not schema_file:
+            raise RuntimeError(
+                "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
+            )
+        dataspecs = nz_edge_load_specs(schema_file, args.nz_schema_file_type)
 
     custom_row = {}
     for kv in args.custom_row:
@@ -279,7 +302,7 @@ if __name__ == "__main__":
     if args.eval_field and args.eval_field_expr:
         eval_func = eval_create_func(args.eval_field_expr)
 
-    tf = RowTransformer(
+    tf = NzRowTransformer(
         args.incremental_field_from,
         args.interval_field,
         args.interval_field_unit,
@@ -312,7 +335,7 @@ if __name__ == "__main__":
                 try:
                     row = next(rows)
                 except StopIteration:
-                    rows.seek(0)
+                    rows.rewind()
                     row = next(rows)
                 row, interval = tf.transform(row, ts, args.interval)
                 row = row | custom_row
@@ -338,13 +361,17 @@ if __name__ == "__main__":
 
                 elapsed += interval if interval > 0 else 0
 
+            if args.output_type == "edge":
+                val = nz_edge_encode(row, dataspecs)
+            else:
+                val = encode({"records": records}, args.output_type)
             res = requests.post(
                 url=(
                     f"{scheme}://{args.redpanda_host}:{args.redpanda_port}"
                     f"/topics/{args.kafka_topic}"
                 ),
                 auth=(args.kafka_sasl_username, args.kafka_sasl_password),
-                data=encode({"records": records}, args.output_type),
+                data=val,
                 headers={
                     "Content-Type": "application/vnd.kafka.json.v2+json",
                     "content-encoding": "gzip",
@@ -354,7 +381,7 @@ if __name__ == "__main__":
             res.raise_for_status()
             logging.debug(
                 "%s, %s",
-                encode({"records": records}, args.output_type),
+                val,
                 args.output_type,
             )
             logging.info(

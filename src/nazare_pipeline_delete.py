@@ -3,7 +3,7 @@
 import argparse
 import logging
 
-from utils.nazare import pipeline_delete
+from utils.nazare import nz_pipeline_delete
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -39,7 +39,7 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    pipeline_delete(
+    nz_pipeline_delete(
         args.store_api_url,
         args.store_api_username,
         args.store_api_password,

@@ -4,7 +4,7 @@ import random
 import string
 import struct
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import datetime, timedelta, timezone
 
 from faker import Faker
 from sqlalchemy import (
@@ -398,18 +398,18 @@ class NZFakerEdge(NZFakerBase):
         port,
         username,
         password,
-        database,
-        table,
+        db_name,
+        table_name,
         edge_id,
         loglevel="INFO",
     ):
         self.fake = Faker(use_weighting=False)
 
         self.engine = create_engine(
-            f"postgresql://{username}:{password}@{host}:{port}/{database}",
+            f"postgresql://{username}:{password}@{host}:{port}/{db_name}",
             echo=True if loglevel == "DEBUG" else False,
         )
-        self.EdgeDataSpec = edgedataspec_model(table)
+        self.EdgeDataSpec = edgedataspec_model(table_name)
         self.edge_id = edge_id
         self.update_schema()
 

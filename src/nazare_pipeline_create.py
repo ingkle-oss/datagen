@@ -3,7 +3,7 @@
 import argparse
 import logging
 
-from utils.nazare import pipeline_create, load_schema_file
+from utils.nazare import nz_pipeline_create, nz_load_fields
 from utils.utils import download_s3file
 
 if __name__ == "__main__":
@@ -64,12 +64,12 @@ if __name__ == "__main__":
             schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
         )
 
-    pipeline_create(
+    nz_pipeline_create(
         args.store_api_url,
         args.store_api_username,
         args.store_api_password,
         args.pipeline_name,
-        load_schema_file(schema_file, args.schema_file_type),
+        nz_load_fields(schema_file, args.schema_file_type),
         args.pipeline_deltasync_enabled,
         args.pipeline_retention,
         logger=logging,

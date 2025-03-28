@@ -3,6 +3,7 @@
 # https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html#producer
 # https://github.com/confluentinc/confluent-kafka-python/tree/master/examples
 
+import struct
 import argparse
 import logging
 import time
@@ -12,6 +13,89 @@ from confluent_kafka import KafkaException, Producer
 
 from utils.nzfake import NZFaker, NZFakerEdge, NZFakerStore
 from utils.utils import encode
+from pydantic import BaseModel
+import enum
+from typing import Literal
+
+
+class EdgeDataSpecType(str, enum.Enum):
+    ANALOG = "ANALOG"
+    DIGITAL = "DIGITAL"
+    TEXT = "TEXT"
+
+
+class DataSpec(BaseModel):
+    edgeId: str
+    edgeDataSourceId: str
+    edgeDataSpecId: str
+    name: str
+    type: EdgeDataSpecType
+    format: Literal[
+        "c", "b", "B", "?", "h", "H", "i", "I", "q", "Q", "f", "d", "s", "p"
+    ]
+    size: int
+    Bits: list[str]
+    index: int
+    is_null: bool
+
+
+def _to_datasources(dataspecs: list[DataSpec]) -> dict[str, list[DataSpec]]:
+    datasources: dict[str, list[DataSpec]] = {}
+    for spec in dataspecs:
+        if spec.edgeDataSourceId not in datasources:
+            datasources[spec.edgeDataSourceId] = []
+
+        datasources[spec.edgeDataSourceId].append(spec)
+
+    return datasources
+
+
+def _dataspec_to_values(dataspec: DataSpec, value: any) -> list[int]:
+    if dataspec.is_null:
+        return [0]
+
+    values = []
+    if dataspec.Bits:
+        bits = 0
+        for bit in reversed(dataspec.Bits):
+            if bit:
+                bit = value
+            else:
+                bit = 0
+
+            bits = (bits << 1) | bit
+
+        # Convert to Signed integer value
+        if dataspec.format == "c":
+            bits = bits | (-(bits & 0x80))
+        elif dataspec.format == "h":
+            bits = bits | (-(bits & 0x8000))
+        elif dataspec.format == "i":
+            bits = bits | (-(bits & 0x80000000))
+        elif dataspec.format == "q":
+            bits = bits | (-(bits & 0x8000000000000000))
+        else:
+            logging.error("Unsupported format: %s for bits", dataspec.format)
+
+        values.append(bits)
+    else:
+        values.append(value)
+
+    return values
+
+
+def _to_edge_bson(row: dict, datasources: dict[str, list[DataSpec]]) -> dict:
+    for src, dataspecs in datasources.items():
+        formats = ""
+        values = []
+        for spec in sorted(dataspecs, key=lambda x: x.index):
+            formats += spec.format
+            if spec.type == EdgeDataSpecType.DIGITAL:
+                val = _dataspec_to_values(spec, row.get(spec.name, None))
+                if val is None:
+                    continue
+                values.extend(val)
+        struct.pack(formats, *values)
 
 
 REPORT_COUNT = 0
@@ -294,8 +378,8 @@ if __name__ == "__main__":
             port=args.postgresql_port,
             username=args.postgresql_username,
             password=args.postgresql_password,
-            database=args.postgresql_database,
-            table=args.postgresql_table,
+            db_name=args.postgresql_database,
+            table_name=args.postgresql_table,
             edge_id=args.postgresql_edge_id,
             loglevel=args.loglevel,
         )
