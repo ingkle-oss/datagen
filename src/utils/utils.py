@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import boto3
 import bson
 import orjson
+import pyarrow.dataset as ds
 from bson.codec_options import CodecOptions, TypeCodec, TypeRegistry
 from fastnumbers import check_float
 
@@ -148,16 +149,25 @@ class LoadRows(object):
     def __init__(
         self,
         filepath: str,
-        filetype: str = Literal["csv", "json", "jsonl", "bson"],
+        filetype: str = Literal["csv", "json", "jsonl", "bson", "parquet"],
     ):
         self.filepath = filepath
         self.filetype = filetype
         self.bson_iter = None
         self.json_iter = None
         self.json_obj = None
+        self.pq_batches = None
+        self.pq_batch = None
+        self.pq_batch_idx = 0
+        self.pq_batch_size = 1000
+        self.pq_table = None
 
         if self.filetype == "bson":
             self.fo = open(self.filepath, "rb")
+        elif self.filetype == "parquet":
+            self.pq_batches = ds.dataset(self.filepath, format="parquet").to_batches(
+                batch_size=self.pq_batch_size
+            )
         else:
             self.fo = open(self.filepath, "r", encoding="utf-8")
 
@@ -192,6 +202,10 @@ class LoadRows(object):
         elif self.filetype == "csv":
             self.fo.seek(0)
             self.headers = self.fo.readline().strip().split(",")
+        elif self.filetype == "parquet":
+            self.pq_batches = ds.dataset(self.filepath, format="parquet").to_batches(
+                batch_size=self.pq_batch_size
+            )
 
     def __iter__(self):
         return self
@@ -207,6 +221,12 @@ class LoadRows(object):
                 raise StopIteration
 
             row = orjson.loads(line)
+        elif self.filetype == "parquet":
+            if self.pq_batch is None or self.pq_batch_idx >= self.pq_batch.num_rows:
+                self.pq_batch = next(self.pq_batches)
+                self.pq_batch_idx = 0
+            row = self.pq_batch.slice(self.pq_batch_idx, 1).to_pylist()[0]
+            self.pq_batch_idx += 1
         else:
             line = self.fo.readline()
             if not line:

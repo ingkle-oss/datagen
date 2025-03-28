@@ -21,6 +21,7 @@ s3fs = "==2024.6.1"
 pydantic = "*"
 pymongo = "*"
 orjson = "*"
+pyarrow = "*"
 
 [dev-packages]
 black = "*"

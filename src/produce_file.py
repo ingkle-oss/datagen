@@ -128,7 +128,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input-type",
         help="Input file type",
-        choices=["csv", "json", "jsonl", "bson"],
+        choices=["csv", "json", "jsonl", "bson", "parquet"],
         default="json",
     )
     parser.add_argument(
