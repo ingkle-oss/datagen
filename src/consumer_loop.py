@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from confluent_kafka import Consumer
 
-from utils.nazare import nz_edge_decode, nz_edge_load_specs
+from utils.nazare import nz_edge_row_decode, nz_edge_load_specs
 from utils.utils import decode, download_s3file
 
 if __name__ == "__main__":
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--count", help="Kafka consumer count", type=int, default=1)
     parser.add_argument(
-        "--timeout", help="Kafka consumer timeout", type=float, default=10.0
+        "--timeout", help="Kafka consumer timeout", type=float, default=1.0
     )
 
     # Nazare Specific Options
@@ -140,19 +140,20 @@ if __name__ == "__main__":
                 elif msg.error():
                     logging.info("Consumer error: %s", msg.error())
                 try:
-                    if args.input_type == "edge":
-                        val = nz_edge_decode(msg.value(), dataspecs)
-                    else:
-                        val = decode(msg.value(), args.input_type)
+                    val = decode(msg.value(), args.input_type)
                     logging.debug("Message received: %s:%s", msg.key, val)
                 except Exception as e:
                     logging.error("Error processing message: %s", e)
                     continue
 
+                if args.input_type == "edge":
+                    val = nz_edge_row_decode(val, dataspecs)
+
                 cnt += 1
+                logging.debug("Message decoded: %s:%s", msg.key, val)
 
             logging.info(
-                "Report: Message rate: %d records/sec",
+                "Report: Message rate: %f records/sec",
                 float(cnt / (datetime.now(timezone.utc) - prev).total_seconds()),
             )
             cnt = 0

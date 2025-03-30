@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from confluent_kafka import KafkaException, Producer
 
-from utils.nzfake import NZFaker, NZFakerEdge, NZFakerStore
+from utils.nzfake import NZFakerDB, NZFakerEdgeSource, NZFakerStore
 from utils.utils import encode
 from pydantic import BaseModel
 import enum
@@ -373,7 +373,7 @@ if __name__ == "__main__":
             raise ValueError("postgresql options are not enough for edge data specs")
 
         logging.info("Using faker from PostgreSQL edge DB...")
-        fake = NZFakerEdge(
+        fake = NZFakerEdgeSource(
             host=args.postgresql_host,
             port=args.postgresql_port,
             username=args.postgresql_username,
@@ -385,7 +385,7 @@ if __name__ == "__main__":
         )
     else:
         logging.info("Using faker from parameters...")
-        fake = NZFaker(
+        fake = NZFakerDB(
             bool_count=args.field_bool_count,
             int_count=args.field_int_count,
             float_count=args.field_float_count,

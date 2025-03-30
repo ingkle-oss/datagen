@@ -1,0 +1,107 @@
+{
+    "edgeId": "fake_test_edge",
+    "edgeDataSourceId": "tcp",
+    "name": "tcp",
+    "type": "SocketEdgeDataSource",
+    "period": 1000,
+    "payload": {
+        "type": "ARRAY",
+        "fields": [
+            "c00",
+            "b00",
+            "bb00",
+            "B00",
+            "Bb00",
+            "_b00",
+            "h00",
+            "hb00",
+            "H00",
+            "i00",
+            "I00",
+            "l00",
+            "L00",
+            "q00",
+            "Q00",
+            "f00",
+            "d00",
+            "s00",
+            "p00"
+        ],
+        "format": ">cbbBB?2hHiIlLqQfd10s2p",
+        "swapBytes": [],
+        "textFields": [],
+        "digitalFields": [
+            {
+                "bits": [
+                    "b00",
+                    null,
+                    "b02",
+                    "b03",
+                    "b04",
+                    null,
+                    null,
+                    "b07",
+                    null
+                ],
+                "field": "bb00"
+            },
+            {
+                "bits": [
+                    "b00",
+                    null,
+                    "b02",
+                    "b03",
+                    "b04",
+                    null,
+                    null,
+                    "b07",
+                    null
+                ],
+                "field": "bB00"
+            },
+            {
+                "bits": [
+                    "b00",
+                    null,
+                    "b02",
+                    "b03",
+                    "b04",
+                    null,
+                    null,
+                    "b07",
+                    null
+                ],
+                "field": "Bb00"
+            },
+            {
+                "bits": [
+                    "b00",
+                    "b01",
+                    null,
+                    "b03",
+                    "b04",
+                    "b05",
+                    "b06",
+                    "b07",
+                    null,
+                    "b09",
+                    "b10",
+                    "b11",
+                    null,
+                    null,
+                    null,
+                    null
+                ],
+                "field": "hb00"
+            }
+        ],
+        "virtualFields": []
+    },
+    "protocol": "TCP",
+    "server": {
+        "ip": "192.168.1.1",
+        "port": 1234
+    },
+    "isServer": true,
+    "wordOrder": "BIG"
+}

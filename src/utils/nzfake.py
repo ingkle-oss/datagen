@@ -1,4 +1,3 @@
-import enum
 import logging
 import random
 import string
@@ -7,24 +6,17 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 
 from faker import Faker
-from sqlalchemy import (
-    ARRAY,
-    Boolean,
-    DateTime,
-    Enum,
-    String,
-    create_engine,
-    func,
-    select,
-)
+from sqlalchemy import Boolean, DateTime, String, create_engine, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-from utils.nazare import Field
+from utils.nazare import EdgeDataSpec, EdgeDataSpecType, Field
 
 
-def _struct_to_value(format: str, size: int):
+def _gen_struct_to_value(format: str, size: int):
     value = None
-    if format == "c" or format == "b":
+    if format == "c":
+        value = random.choice(string.ascii_letters + string.digits).encode("utf-8")
+    elif format == "b":
         value = random.randint(-(2**7), (2**7) - 1)
     elif format == "B":
         value = random.randint(0, (2**8) - 1)
@@ -59,7 +51,7 @@ def _struct_to_value(format: str, size: int):
     return value
 
 
-def _datatype_to_value(
+def _gen_datatype_values(
     type: str, str_cardinality: int, str_choice: list[str], str_length: int
 ):
     value = None
@@ -98,7 +90,55 @@ def _datatype_to_value(
     return value
 
 
-class NZFakerBase(ABC):
+def _gen_spec_values(spec: EdgeDataSpec) -> list[int]:
+    if spec.is_null:
+        return [0]
+
+    values = []
+    if spec.type == EdgeDataSpecType.DIGITAL and spec.bits:
+        bits = 0
+        for bit in reversed(spec.bits):
+            if bit:
+                bit = random.getrandbits(1)
+            else:
+                bit = 0
+
+            bits = (bits << 1) | bit
+
+        # convert unsigned to signed
+        if spec.format == "b":
+            bits = 0b11111111
+            bits = bits | (-(bits & 0x80))
+        elif spec.format == "h":
+            bits = 0b1111111111111111
+            bits = bits | (-(bits & 0x8000))
+        elif spec.format == "i" or spec.format == "l":
+            bits = bits | (-(bits & 0x80000000))
+        elif spec.format == "q":
+            bits = bits | (-(bits & 0x8000000000000000))
+        elif (
+            spec.format != "B"
+            and spec.format != "H"
+            and spec.format != "I"
+            and spec.format != "L"
+            and spec.format != "Q"
+        ):
+            logging.error(
+                "Unsupported format for bits, use 0 value, spec_id: %s, format: %s, bit: %s",
+                spec.edgeDataSpecId,
+                spec.format,
+                bit,
+            )
+            return [0]
+
+        values.append(bits)
+    else:
+        values.append(_gen_struct_to_value(spec.format, spec.size))
+
+    return values
+
+
+class NZFakerDB(ABC):
     @abstractmethod
     def get_schema(self) -> list[dict[str, any]]:
         pass
@@ -112,7 +152,7 @@ class NZFakerBase(ABC):
         pass
 
 
-class NZFaker(NZFakerBase):
+class NZFaker(NZFakerDB):
     fake = None
     fields = []
     str_choice: list[str]
@@ -247,7 +287,7 @@ def field_model(tablename):
     return TableField
 
 
-class NZFakerStore(NZFakerBase):
+class NZFakerStore(NZFakerDB):
     engine = None
     TableField = None
     fake = None
@@ -322,7 +362,7 @@ class NZFakerStore(NZFakerBase):
                 # 'timestamp' and 'date' is a reserved field for deltasync
                 continue
 
-            values[field["name"]] = _datatype_to_value(
+            values[field["name"]] = _gen_datatype_values(
                 field["type"],
                 self.str_cardinality,
                 self.str_choice,
@@ -332,62 +372,10 @@ class NZFakerStore(NZFakerBase):
         return values
 
 
-def edgedataspec_model(tablename):
-    class EdgeDataSpecType(str, enum.Enum):
-        ANALOG = "ANALOG"
-        DIGITAL = "DIGITAL"
-        TEXT = "TEXT"
-
-    class EdgeDataSpec(Base):
-        __tablename__ = tablename
-
-        edgeId: Mapped[str] = mapped_column(String, primary_key=True)
-        edgeDataSourceId: Mapped[str] = mapped_column(String, primary_key=True)
-        edgeDataSpecId: Mapped[str] = mapped_column(String, primary_key=True)
-
-        type: Mapped[EdgeDataSpecType] = mapped_column(
-            Enum(EdgeDataSpecType), nullable=False
-        )
-        format: Mapped[str] = mapped_column(String, nullable=False)
-        size: Mapped[int] = mapped_column(String, nullable=True)
-        index: Mapped[int] = mapped_column(String, nullable=False)
-        is_null: Mapped[bool] = mapped_column(Boolean, default=False)
-        bits: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
-
-        def __init__(
-            self,
-            edgeId,
-            edgeDataSourceId,
-            edgeDataSpecId,
-            type,
-            format,
-            size,
-            index,
-            is_null,
-            bits,
-            created_at,
-            updated_at,
-        ):
-            self.edgeId = edgeId
-            self.edgeDataSourceId = edgeDataSourceId
-            self.edgeDataSpecId = edgeDataSpecId
-            self.type = type
-            self.format = format
-            self.size = size
-            self.index = index
-            self.is_null = is_null
-            self.bits = bits
-            self.created_at = created_at
-            self.updated_at = updated_at
-
-    return EdgeDataSpec
-
-
-class NZFakerEdge(NZFakerBase):
+class NZFakerEdgeSource(NZFakerDB):
     engine = None
-    EdgeDataSpec = None
     fake = None
-    dataspecs = []
+    dataspecs: list[EdgeDataSpec] = []
     str_choice: list[str]
     str_length: int
     str_cardinality: int
@@ -399,7 +387,6 @@ class NZFakerEdge(NZFakerBase):
         username,
         password,
         db_name,
-        table_name,
         edge_id,
         loglevel="INFO",
     ):
@@ -409,17 +396,16 @@ class NZFakerEdge(NZFakerBase):
             f"postgresql://{username}:{password}@{host}:{port}/{db_name}",
             echo=True if loglevel == "DEBUG" else False,
         )
-        self.EdgeDataSpec = edgedataspec_model(table_name)
         self.edge_id = edge_id
         self.update_schema()
 
-    def get_schema(self) -> list[dict[str, any]]:
+    def get_schema(self) -> dict[str, list[EdgeDataSpec]]:
         return self.dataspecs
 
     def update_schema(self):
         with Session(self.engine, expire_on_commit=False) as session:
             logging.info("Updating schema...")
-            self.dataspecs = sorted(
+            dataspecs = sorted(
                 [
                     {
                         "edgeDataSourceId": s.edgeDataSourceId,
@@ -432,69 +418,42 @@ class NZFakerEdge(NZFakerBase):
                         "bits": s.bits,
                     }
                     for s in session.scalars(
-                        select(self.EdgeDataSpec).where(
-                            self.EdgeDataSpec.edgeId == self.edge_id
-                        )
+                        select(EdgeDataSpec).where(EdgeDataSpec.edgeId == self.edge_id)
                     ).all()
                 ],
                 key=lambda x: (x["edgeDataSourceId"], x["index"]),
             )
+            dataspecs = EdgeDataSpec.model_validate(dataspecs)
+            self.dataspecs = {}
+            for spec in dataspecs:
+                if spec.edgeDataSourceId not in self.dataspecs:
+                    self.dataspecs[spec.edgeDataSourceId] = []
+                self.dataspecs[spec.edgeDataSourceId].append(spec)
             logging.info("Schema length: %d", len(self.dataspecs))
             logging.info("Schema: %s", self.dataspecs)
 
-    @staticmethod
-    def _dataspec_to_values(dataspec: dict) -> list[int]:
-        if dataspec["is_null"]:
-            return [0]
-
-        values = []
-        if dataspec["bits"]:
-            bits = 0
-            for bit in reversed(dataspec["bits"]):
-                if bit:
-                    bit = random.getrandbits(1)
-                else:
-                    bit = 0
-
-                bits = (bits << 1) | bit
-
-            # Convert to Signed integer value
-            if dataspec["format"] == "c":
-                bits = bits | (-(bits & 0x80))
-            elif dataspec["format"] == "h":
-                bits = bits | (-(bits & 0x8000))
-            elif dataspec["format"] == "i":
-                bits = bits | (-(bits & 0x80000000))
-            elif dataspec["format"] == "q":
-                bits = bits | (-(bits & 0x8000000000000000))
-            else:
-                logging.error("Unsupported format: %s for bits", dataspec["format"])
-
-            values.append(bits)
-        else:
-            values.append(_struct_to_value(dataspec["format"], dataspec["size"]))
-
-        return values
-
     def values(self):
-        values = {}
-        datasources = {}
-        for spec in self.dataspecs:
-            if spec["edgeDataSourceId"] not in datasources:
-                datasources[spec["edgeDataSourceId"]] = []
+        values: dict[str, bytes] = {}
 
-            datasources[spec["edgeDataSourceId"]].append(spec)
-
-        for source in datasources:
-            _formats = ""
-            _values = []
-            for spec in datasources[source]:
-                _formats += spec["format"]
-                _values.extend(NZFakerEdge._dataspec_to_values(spec))
-
-            values[source] = struct.pack(_formats, *_values)
+        for src, specs in self.dataspecs.items():
+            format = ""
+            _vals = []
+            for spec in sorted(specs, key=lambda x: x.index):
+                format += spec.format
+                _vals.extend(_gen_spec_values(spec))
+            values[src] = struct.pack(format, *_vals)
 
         return values
+
+
+class NaFaker(ABC):
+    @abstractmethod
+    def values(self) -> dict[str, any]:
+        pass
+
+    @abstractmethod
+    def get_schema(self) -> list[any]:
+        pass
 
 
 class NZFakerField:
@@ -567,7 +526,10 @@ class NZFakerField:
         for field in fields:
             maps[field.type].append(field.name)
 
-    def values(self):
+    def get_schema(self) -> list[Field]:
+        return self.fields
+
+    def values(self) -> dict[str, any]:
         values = {}
         values |= dict(
             zip(
@@ -636,5 +598,28 @@ class NZFakerField:
                 [self.fake.date_time() for _ in range(len(self.timestamp_ntz_s))],
             )
         )
+
+        return values
+
+
+class NZFakerEdge:
+    dataspecs: dict[str, list[EdgeDataSpec]] = []
+
+    def __init__(self, dataspecs: dict[str, list[EdgeDataSpec]]):
+        self.fake = Faker(use_weighting=False)
+        self.dataspecs = dataspecs
+
+    def get_schema(self) -> dict[str, list[EdgeDataSpec]]:
+        return self.dataspecs
+
+    def values(self) -> dict[str, any]:
+        values = {}
+        for src, specs in self.dataspecs.items():
+            fmt = ""
+            vals = []
+            for spec in specs:
+                fmt += spec.format
+                vals.extend(_gen_spec_values(spec))
+            values[src] = struct.pack(fmt, *vals)
 
         return values

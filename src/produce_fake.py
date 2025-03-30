@@ -11,8 +11,13 @@ from zoneinfo import ZoneInfo
 
 from confluent_kafka import KafkaException, Producer
 
-from utils.nazare import Field, nz_load_fields, nz_pipeline_create
-from utils.nzfake import NZFakerField
+from utils.nazare import (
+    nz_edge_row_encode,
+    nz_edge_load_specs,
+    nz_load_fields,
+    nz_pipeline_create,
+)
+from utils.nzfake import NaFaker, NZFakerField, NZFakerEdge
 from utils.utils import download_s3file, encode
 
 REPORT_COUNT = 0
@@ -122,13 +127,6 @@ if __name__ == "__main__":
     )
 
     # File
-    parser.add_argument("--schema-file", help="Schema file", required=True)
-    parser.add_argument(
-        "--schema-file-type",
-        help="Schema file type",
-        choices=["csv", "jsonl", "bsonl"],
-        default="jsonl",
-    )
     parser.add_argument(
         "--s3-endpoint",
         help="S3 url",
@@ -141,7 +139,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-type",
         help="Output message type",
-        choices=["csv", "json", "bson"],
+        choices=["csv", "json", "bson", "txt", "edge"],
         default="json",
     )
     parser.add_argument(
@@ -178,19 +176,30 @@ if __name__ == "__main__":
 
     # NZStore REST API
     parser.add_argument(
-        "--store-api-url",
-        help="Store API URL",
+        "--nz-create-pipeline",
+        help="Create Nazare pipeline",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--nz-schema-file", help="Nazare Schema file")
+    parser.add_argument(
+        "--nz-schema-file-type",
+        help="Nazare Schema file type",
+        choices=["csv", "json", "jsonl", "bson"],
+        default="jsonl",
+    )
+    parser.add_argument(
+        "--nz-api-url",
+        help="Nazare Store API URL",
         default="http://nzstore.nzstore.svc.cluster.local:8000/api/v1/pipelines",
     )
-    parser.add_argument("--store-api-username", help="Store API username")
-    parser.add_argument("--store-api-password", help="Store API password")
-
-    # NZStore pipeline
+    parser.add_argument("--nz-api-username", help="Nazare Store API username")
+    parser.add_argument("--nz-api-password", help="Nazare Store API password")
     parser.add_argument(
-        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
+        "--nz-pipeline-retention", help="Retention (e.g. 60,d)", default=""
     )
     parser.add_argument(
-        "--pipeline-deltasync-enabled",
+        "--nz-pipeline-deltasync-enabled",
         help="Enable deltasync",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -221,23 +230,52 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    schema_file = args.schema_file
-    if schema_file.startswith("s3a://"):
-        schema_file = download_s3file(
-            schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
-        )
-    fields: list[Field] = nz_load_fields(schema_file, args.schema_file_type)
+    schema_file = None
+    if args.nz_schema_file and args.nz_schema_file_type:
+        schema_file = args.nz_schema_file
+        if schema_file.startswith("s3a://"):
+            schema_file = download_s3file(
+                schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
+            )
 
-    if args.store_api_url and args.store_api_username and args.store_api_password:
+    if args.nz_create_pipeline:
+        if not schema_file:
+            raise RuntimeError(
+                "Please provide both --nz-schema-file and --nz-schema-file-type to create pipeline that requires schema file"
+            )
+
+        if not args.nz_api_url or not args.nz_api_username or not args.nz_api_password:
+            raise RuntimeError("Nazare API credentials are required")
+
         nz_pipeline_create(
-            args.store_api_url,
-            args.store_api_username,
-            args.store_api_password,
+            args.nz_api_url,
+            args.nz_api_username,
+            args.nz_api_password,
             args.kafka_topic,
-            fields,
-            args.pipeline_deltasync_enabled,
-            args.pipeline_retention,
+            args.nz_schema_file_type,
+            schema_file,
+            "EDGE" if args.output_type == "edge" else "KAFKA",
+            args.nz_pipeline_deltasync_enabled,
+            args.nz_pipeline_retention,
             logger=logging,
+        )
+
+    faker: NaFaker = None
+    if args.output_type == "edge":
+        if not schema_file:
+            raise RuntimeError(
+                "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
+            )
+        faker: NZFakerEdge = NZFakerEdge(
+            nz_edge_load_specs(schema_file, args.nz_schema_file_type),
+        )
+    else:
+        faker: NaFaker = NZFakerField(
+            nz_load_fields(schema_file, args.nz_schema_file_type),
+            args.fake_string_length,
+            args.fake_string_cardinality,
+            args.fake_binary_length,
+            ZoneInfo(args.fake_timestamp_tzinfo),
         )
 
     custom_row = {}
@@ -284,20 +322,13 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
-    fake = NZFakerField(
-        fields,
-        args.fake_string_length,
-        args.fake_string_cardinality,
-        args.fake_binary_length,
-        ZoneInfo(args.fake_timestamp_tzinfo),
-    )
-
     while True:
         elapsed = 0
         start_time = datetime.now(timezone.utc)
         for _ in range(args.rate):
             ts = start_time + timedelta(seconds=elapsed)
-            row = fake.values() | custom_row
+
+            row = faker.values() | custom_row
 
             if args.date_enabled:
                 if "date" in row:
@@ -310,16 +341,15 @@ if __name__ == "__main__":
 
             producer.poll(0)
             try:
+                val = encode(row, args.output_type)
                 producer.produce(
                     topic=args.kafka_topic,
-                    value=encode(row, args.output_type),
+                    value=val,
                     key=args.kafka_key.encode("utf-8") if args.kafka_key else None,
                     partition=args.kafka_partition,
                     on_delivery=delivery_report,
                 )
-                logging.debug(
-                    "Produced: %s:%s", args.kafka_key, encode(row, args.output_type)
-                )
+                logging.debug("Produced: %s:%s", args.kafka_key, val)
             except KafkaException as e:
                 logging.error("KafkaException: %s", e)
 

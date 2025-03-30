@@ -14,7 +14,7 @@ import urllib3
 
 from utils.nazare import (
     NzRowTransformer,
-    nz_edge_encode,
+    nz_edge_row_encode,
     nz_edge_load_specs,
     nz_pipeline_create,
 )
@@ -332,6 +332,7 @@ if __name__ == "__main__":
             start_time = datetime.now(timezone.utc)
             for _ in range(args.rate):
                 ts = start_time + timedelta(seconds=elapsed)
+
                 try:
                     row = next(rows)
                 except StopIteration:
@@ -339,6 +340,9 @@ if __name__ == "__main__":
                     row = next(rows)
                 row, interval = tf.transform(row, ts, args.interval)
                 row = row | custom_row
+
+                if args.output_type == "edge":
+                    row = nz_edge_row_encode(row, dataspecs)
 
                 if args.date_enabled:
                     if "date" in row:
@@ -361,10 +365,7 @@ if __name__ == "__main__":
 
                 elapsed += interval if interval > 0 else 0
 
-            if args.output_type == "edge":
-                val = nz_edge_encode(row, dataspecs)
-            else:
-                val = encode({"records": records}, args.output_type)
+            val = encode({"records": records}, args.output_type)
             res = requests.post(
                 url=(
                     f"{scheme}://{args.redpanda_host}:{args.redpanda_port}"

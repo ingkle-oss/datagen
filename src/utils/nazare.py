@@ -13,7 +13,6 @@ from pydantic import BaseModel, BeforeValidator, TypeAdapter
 from typing_extensions import Annotated
 
 from utils.utils import load_rows
-from utils.utils import encode, decode
 
 
 # * Field
@@ -40,14 +39,8 @@ class Field(BaseModel):
 # * Edge
 
 
-class EdgeDataSpecType(str, enum.Enum):
-    ANALOG = "ANALOG"
-    DIGITAL = "DIGITAL"
-    TEXT = "TEXT"
-
-
 STRUCT_FMT = {
-    "c": int,
+    "c": str,
     "b": int,
     "B": int,
     "?": bool,
@@ -74,22 +67,29 @@ def _validate_format(val: str) -> str:
     return val
 
 
-class EdgeDataSpec(BaseModel):
-    edgeId: str
-    edgeDataSourceId: str
-    edgeDataSpecId: str
-    type: EdgeDataSpecType
-    format: Annotated[str, BeforeValidator(_validate_format)]
-    size: int
-    bits: list[str | None] | None = None
-    index: int
-    is_null: bool
-
-
 def _validate_obj(val: str | dict) -> dict:
     if isinstance(val, dict):
         return val
     return ast.literal_eval(val)
+
+
+class EdgeDataSpecType(str, enum.Enum):
+    ANALOG = "ANALOG"
+    DIGITAL = "DIGITAL"
+    TEXT = "TEXT"
+
+
+class EdgeDataSpec(BaseModel):
+    edgeId: str
+    edgeDataSourceId: str
+    edgeDataSpecId: str
+
+    type: EdgeDataSpecType
+    format: Annotated[str, BeforeValidator(_validate_format)]
+    size: int
+    index: int
+    is_null: bool
+    bits: list[str | None] | None = None
 
 
 class EdgeDataSource(BaseModel):
@@ -110,8 +110,10 @@ class EdgeDataSource(BaseModel):
     registerType: str | None = None
 
 
-def _encode_value(spec: EdgeDataSpec, row: dict) -> list[int]:
+def _edge_encode(spec: EdgeDataSpec, row: dict) -> list[int]:
     if spec.is_null:
+        if spec.format == "c":
+            return [b"0"]
         return [0]
 
     values = []
@@ -131,15 +133,21 @@ def _encode_value(spec: EdgeDataSpec, row: dict) -> list[int]:
             bits = (bits << 1) | bit
 
         # Convert to Signed integer value
-        if spec.format == "c":
+        if spec.format == "b":
             bits = bits | (-(bits & 0x80))
         elif spec.format == "h":
             bits = bits | (-(bits & 0x8000))
-        elif spec.format == "i":
+        elif spec.format == "i" or spec.format == "l":
             bits = bits | (-(bits & 0x80000000))
         elif spec.format == "q":
             bits = bits | (-(bits & 0x8000000000000000))
-        else:
+        elif (
+            spec.format != "B"
+            and spec.format != "H"
+            and spec.format != "I"
+            and spec.format != "L"
+            and spec.format != "Q"
+        ):
             logging.error(
                 "Unsupported format for bits, use 0 value, spec_id: %s, format: %s, bit: %s",
                 spec.edgeDataSpecId,
@@ -176,32 +184,30 @@ def _encode_value(spec: EdgeDataSpec, row: dict) -> list[int]:
     return values
 
 
-def nz_edge_encode(row: dict, dataspecs: dict[str, list[EdgeDataSpec]]) -> bytes:
+def nz_edge_row_encode(row: dict, dataspecs: dict[str, list[EdgeDataSpec]]) -> bytes:
     values: dict[str, bytes] = {}
+
     for src, specs in dataspecs.items():
         format = ""
         _vals = []
         for spec in sorted(specs, key=lambda x: x.index):
             format += spec.format
-            val = _encode_value(spec, row)
-            if val is None:
-                continue
-            _vals.extend(val)
+            _vals.extend(_edge_encode(spec, row))
         values[src] = struct.pack(format, *_vals)
-    return encode(values, "bson")
+    return values
 
 
 TRIAGE_PREFIX = "__triage__@"
 
 
-def _decode_value(spec: EdgeDataSpec, value: any) -> dict:
+def _edge_decode(spec: EdgeDataSpec, value: any) -> dict:
     if value is None or spec.is_null:
         return {}
 
     values = {}
     if spec.type == EdgeDataSpecType.DIGITAL and spec.bits:
-        # Convert to unsigned integer
-        if spec.format == "c":
+        # Convert signed to unsigned integer
+        if spec.format == "b":
             value = value + (1 << 8)
         elif spec.format == "h":
             value = value + (1 << 16)
@@ -209,9 +215,15 @@ def _decode_value(spec: EdgeDataSpec, value: any) -> dict:
             value = value + (1 << 32)
         elif spec.format == "q":
             value = value + (1 << 64)
-        else:
+        elif (
+            spec.format != "B"
+            and spec.format != "H"
+            and spec.format != "I"
+            and spec.format != "L"
+            and spec.format != "Q"
+        ):
             logging.error(
-                "Unsupported format for bits, use 0 value, spec_id: %s, format: %s, value: %s",
+                "Unsupported format for bits, send it to triage, spec_id: %s, format: %s, value: %s",
                 spec.edgeDataSpecId,
                 spec.format,
                 value,
@@ -234,7 +246,7 @@ def _decode_value(spec: EdgeDataSpec, value: any) -> dict:
                 )
             except UnicodeDecodeError:
                 logging.error(
-                    "Decoding error, spec_id: %s, format: %s, value: %s",
+                    "Decoding error, send it to triage, spec_id: %s, format: %s, value: %s",
                     spec.edgeDataSpecId,
                     spec.format,
                     value,
@@ -246,13 +258,14 @@ def _decode_value(spec: EdgeDataSpec, value: any) -> dict:
     return values
 
 
-def nz_edge_decode(row: dict, dataspecs: dict[str, list[EdgeDataSpec]]) -> dict:
+def nz_edge_row_decode(row: dict, dataspecs: dict[str, list[EdgeDataSpec]]) -> dict:
     values = {}
-    for src_id, packed in decode(row, "bson").items():
+    for src_id, packed in row.items():
         if packed is None:
             continue
 
-        if src_id == "timestamp":
+        if src_id not in dataspecs:
+            values[src_id] = packed
             continue
 
         specs = dataspecs[src_id]
@@ -261,7 +274,7 @@ def nz_edge_decode(row: dict, dataspecs: dict[str, list[EdgeDataSpec]]) -> dict:
 
         logging.debug("unpacked: %s", unpacked)
         for idx, spec in enumerate(specs):
-            values.update(_decode_value(spec, unpacked[idx]))
+            values.update(_edge_decode(spec, unpacked[idx]))
 
     return values
 

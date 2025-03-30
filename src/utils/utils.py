@@ -85,7 +85,7 @@ def decode(val: str | bytes, type: str):
             break
     elif type == "json":
         value = orjson.loads(val.decode("utf-8"))
-    elif type == "bson":
+    elif type == "bson" or type == "edge":
         value = bson.decode(val)
     elif type == "txt":
         value = val.decode("utf-8")
