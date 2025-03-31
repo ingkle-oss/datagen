@@ -76,9 +76,9 @@ if __name__ == "__main__":
     )
 
     # File
-    parser.add_argument("--schema-file", help="Schema file", required=True)
+    parser.add_argument("--nz-schema-file", help="Schema file", required=True)
     parser.add_argument(
-        "--schema-file-type",
+        "--nz-schema-file-type",
         help="Schema file type",
         choices=["csv", "jsonl", "bsonl"],
         default="jsonl",
@@ -133,12 +133,12 @@ if __name__ == "__main__":
 
     # NZStore REST API
     parser.add_argument(
-        "--store-api-url",
+        "--nz-api-url",
         help="Store API URL",
         default="http://nzstore.nzstore.svc.cluster.local:8000/api/v1/pipelines",
     )
-    parser.add_argument("--store-api-username", help="Store API username")
-    parser.add_argument("--store-api-password", help="Store API password")
+    parser.add_argument("--nz-api-username", help="Store API username")
+    parser.add_argument("--nz-api-password", help="Store API password")
 
     # NZStore pipeline
     parser.add_argument(
@@ -176,18 +176,18 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    schema_file = args.schema_file
+    schema_file = args.nz_schema_file
     if schema_file.startswith("s3a://"):
         schema_file = download_s3file(
             schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
         )
-    fields: list[Field] = nz_load_fields(schema_file, args.schema_file_type)
+    fields: list[Field] = nz_load_fields(schema_file, args.nz_schema_file_type)
 
-    if args.store_api_url and args.store_api_username and args.store_api_password:
+    if args.nz_api_url and args.nz_api_username and args.nz_api_password:
         nz_pipeline_create(
-            args.store_api_url,
-            args.store_api_username,
-            args.store_api_password,
+            args.nz_api_url,
+            args.nz_api_username,
+            args.nz_api_password,
             args.mqtt_topic,
             fields,
             args.pipeline_deltasync_enabled,

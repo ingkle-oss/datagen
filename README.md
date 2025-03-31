@@ -20,13 +20,13 @@ Run Kafka producer
 # Produce fake data
 python3 src/produce_fake.py \
 --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --kafka-report-interval 1 \
---schema-file samples/fake.schema.csv --schema-file-type csv \
+--nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
 --output-type json
 
 # Post fake data to pandas http
 python3 src/pandas_http_fake.py \
 --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic \
---schema-file samples/fake.schema.csv --schema-file-type csv \
+--nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
 --output-type json
 
 # Produce a file
@@ -40,7 +40,7 @@ python3 src/produce_file.py \
 # Post a file to pandas http
 python3 src/pandas_http_file.py \
 --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic \
---schema-file samples/fake.schema.csv --schema-file-type csv \
+--nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
 --input-filepath samples/fake.json --input-type json --output-type json
 ```
 
@@ -58,12 +58,12 @@ Run MQTT publisher
 ```bash
 # Publish fake data
 python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure \
---schema-file samples/fake.schema.csv --schema-file-type csv \
+--nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
 --output-type json
 
 # Publish a file
 python3 src/publish_file.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure \
---schema-file samples/fake.schema.csv --schema-file-type csv \
+--nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
 --input-filepath samples/fake.json --input-type json --output-type json
 ```
 
@@ -72,14 +72,14 @@ Create, Delete a Nazare pipeline
 ```bash
 # Create pipeline
 python3 src/nazare_pipeline_create.py \
---store-api-url STORE_API_URL --store-api-username STORE_API_USERNAME --store-api-password STORE_API_PASSWORD \
---pipeline-name PIPELINE_NAME -no-pipeline-deltasync --pipeline-retention '60,d' \
---schema-file SCHEMA_FILE
+--nz-api-url STORE_API_URL --nz-api-username STORE_API_USERNAME --nz-api-password STORE_API_PASSWORD \
+--nz-pipeline-name PIPELINE_NAME -no-pipeline-deltasync --pipeline-retention '60,d' \
+--nz-schema-file SCHEMA_FILE
 
 # Delete pipeline
 python3 src/nazare_pipeline_delete.py \
---store-api-url STORE_API_URL --store-api-username STORE_API_USERNAME --store-api-password STORE_API_PASSWORD \
---pipeline-name PIPELINE_NAME \
+--nz-api-url STORE_API_URL --nz-api-username STORE_API_USERNAME --nz-api-password STORE_API_PASSWORD \
+--nz-pipeline-name PIPELINE_NAME \
 ```
 
 ## Run on docker
