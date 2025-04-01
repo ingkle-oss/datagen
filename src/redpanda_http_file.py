@@ -15,7 +15,7 @@ import urllib3
 from utils.nazare import (
     NzRowTransformer,
     nz_edge_row_encode,
-    nz_edge_load_specs,
+    nz_edge_load_sources,
     nz_pipeline_create,
 )
 from utils.utils import LoadRows, download_s3file, encode, eval_create_func
@@ -285,13 +285,13 @@ if __name__ == "__main__":
             logger=logging,
         )
 
-    dataspecs = []
+    datasources = []
     if args.output_type == "edge":
         if not schema_file:
             raise RuntimeError(
                 "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
             )
-        dataspecs = nz_edge_load_specs(schema_file, args.nz_schema_file_type)
+        datasources = nz_edge_load_sources(schema_file, args.nz_schema_file_type)
 
     custom_row = {}
     for kv in args.custom_row:
@@ -342,7 +342,7 @@ if __name__ == "__main__":
                 row = row | custom_row
 
                 if args.output_type == "edge":
-                    row = nz_edge_row_encode(row, dataspecs)
+                    row = nz_edge_row_encode(row, datasources)
 
                 if args.date_enabled:
                     if "date" in row:

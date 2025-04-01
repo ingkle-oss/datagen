@@ -14,31 +14,10 @@ from typing_extensions import Annotated
 
 from utils.utils import load_rows
 
-
-# * Field
-class Field(BaseModel):
-    name: str
-    type: Literal[
-        "integer",
-        "long",
-        "string",
-        "float",
-        "double",
-        "boolean",
-        "binary",
-        "date",
-        "timestamp",
-        "timestamp_ntz",
-    ]
-    subtype: str | None = None
-    nullable: bool = True
-    comment: str | None = None
-    alias: str | None = None
+TRIAGE_PREFIX = "__triage__@"
 
 
 # * Edge
-
-
 STRUCT_FMT = {
     "c": str,
     "b": int,
@@ -184,20 +163,17 @@ def _edge_encode(spec: EdgeDataSpec, row: dict) -> list[int]:
     return values
 
 
-def nz_edge_row_encode(row: dict, dataspecs: dict[str, list[EdgeDataSpec]]) -> bytes:
+def nz_edge_row_encode(row: dict, datasources: dict[str, list[EdgeDataSpec]]) -> bytes:
     values: dict[str, bytes] = {}
 
-    for src, specs in dataspecs.items():
+    for src_id, specs in datasources.items():
         format = ""
         _vals = []
         for spec in sorted(specs, key=lambda x: x.index):
             format += spec.format
             _vals.extend(_edge_encode(spec, row))
-        values[src] = struct.pack(format, *_vals)
+        values[src_id] = struct.pack(format, *_vals)
     return values
-
-
-TRIAGE_PREFIX = "__triage__@"
 
 
 def _edge_decode(spec: EdgeDataSpec, value: any) -> dict:
@@ -258,17 +234,17 @@ def _edge_decode(spec: EdgeDataSpec, value: any) -> dict:
     return values
 
 
-def nz_edge_row_decode(row: dict, dataspecs: dict[str, list[EdgeDataSpec]]) -> dict:
+def nz_edge_row_decode(row: dict, datasources: dict[str, list[EdgeDataSpec]]) -> dict:
     values = {}
     for src_id, packed in row.items():
         if packed is None:
             continue
 
-        if src_id not in dataspecs:
+        if src_id not in datasources:
             values[src_id] = packed
             continue
 
-        specs = dataspecs[src_id]
+        specs = datasources[src_id]
         format = "".join([spec.format for spec in specs])
         unpacked = struct.unpack(format, packed)
 
@@ -319,7 +295,7 @@ def _format_to_spec_type(format) -> EdgeDataSpecType:
     }.get(format[-1:], EdgeDataSpecType.ANALOG)
 
 
-def nz_edge_load_sources(file: str, file_type: str) -> list[EdgeDataSource]:
+def _load_sources(file: str, file_type: str) -> list[EdgeDataSource]:
     rows = load_rows(file, file_type)
     if len(rows) > 1000:
         raise RuntimeError(f"Too many rows in the edge schema file: {len(rows)}")
@@ -376,13 +352,35 @@ def _datasource_to_dataspecs(datasource: EdgeDataSource) -> list[EdgeDataSpec]:
     return data_specs
 
 
-def nz_edge_load_specs(file: str, file_type: str) -> dict[str, list[EdgeDataSpec]]:
-    datasources = nz_edge_load_sources(file, file_type)
-    dataspecs = {}
-    for datasource in datasources:
-        dataspecs[datasource.edgeDataSourceId] = _datasource_to_dataspecs(datasource)
+def nz_edge_load_sources(file: str, file_type: str) -> dict[str, list[EdgeDataSpec]]:
+    sources = _load_sources(file, file_type)
 
-    return dataspecs
+    datasources = {}
+    for source in sources:
+        datasources[source.edgeDataSourceId] = _datasource_to_dataspecs(source)
+
+    return datasources
+
+
+# * Field
+class Field(BaseModel):
+    name: str
+    type: Literal[
+        "integer",
+        "long",
+        "string",
+        "float",
+        "double",
+        "boolean",
+        "binary",
+        "date",
+        "timestamp",
+        "timestamp_ntz",
+    ]
+    subtype: str | None = None
+    nullable: bool = True
+    comment: str | None = None
+    alias: str | None = None
 
 
 def nz_predict_field(key: str, val: any) -> Field:
@@ -497,7 +495,7 @@ def nz_pipeline_create(
         }
 
         datasources: list[EdgeDataSource] = []
-        for src in nz_edge_load_sources(schema_file, schema_file_type):
+        for src in _load_sources(schema_file, schema_file_type):
             src.edgeId = None  # Remove for creating
             datasources.append(src.model_dump(exclude_none=True))
 

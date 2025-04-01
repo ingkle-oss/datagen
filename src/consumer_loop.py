@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from confluent_kafka import Consumer
 
-from utils.nazare import nz_edge_row_decode, nz_edge_load_specs
+from utils.nazare import nz_edge_row_decode, nz_edge_load_sources
 from utils.utils import decode, download_s3file
 
 if __name__ == "__main__":
@@ -76,7 +76,7 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    dataspecs = []
+    datasources = []
     if args.input_type == "edge":
         if not args.nz_schema_file or not args.nz_schema_file_type:
             raise RuntimeError(
@@ -87,7 +87,7 @@ if __name__ == "__main__":
             schema_file = download_s3file(
                 schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
             )
-        dataspecs = nz_edge_load_specs(schema_file, args.nz_schema_file_type)
+        datasources = nz_edge_load_sources(schema_file, args.nz_schema_file_type)
 
     # https://docs.confluent.io/platform/current/installation/configuration/consumer-configs.html
     configs = {
@@ -140,17 +140,23 @@ if __name__ == "__main__":
                 elif msg.error():
                     logging.info("Consumer error: %s", msg.error())
                 try:
-                    val = decode(msg.value(), args.input_type)
-                    logging.debug("Message received: %s:%s", msg.key, val)
+                    values = decode(msg.value(), args.input_type)
+                    logging.debug(
+                        "Message received, partition: %s, offset: %s, key: %s, value:%s",
+                        msg.partition,
+                        msg.offset,
+                        msg.key,
+                        values,
+                    )
                 except Exception as e:
                     logging.error("Error processing message: %s", e)
                     continue
 
                 if args.input_type == "edge":
-                    val = nz_edge_row_decode(val, dataspecs)
+                    values = nz_edge_row_decode(values, datasources)
 
                 cnt += 1
-                logging.debug("Message decoded: %s:%s", msg.key, val)
+                logging.debug("Message decoded: %s:%s", msg.key, values)
 
             logging.info(
                 "Report: Message rate: %f records/sec",

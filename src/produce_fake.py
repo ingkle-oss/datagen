@@ -11,13 +11,8 @@ from zoneinfo import ZoneInfo
 
 from confluent_kafka import KafkaException, Producer
 
-from utils.nazare import (
-    nz_edge_row_encode,
-    nz_edge_load_specs,
-    nz_load_fields,
-    nz_pipeline_create,
-)
-from utils.nzfake import NaFaker, NZFakerField, NZFakerEdge
+from utils.nazare import nz_edge_load_sources, nz_load_fields, nz_pipeline_create
+from utils.nzfake import NaFaker, NZFakerEdge, NZFakerField
 from utils.utils import download_s3file, encode
 
 REPORT_COUNT = 0
@@ -267,7 +262,7 @@ if __name__ == "__main__":
                 "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
             )
         faker: NZFakerEdge = NZFakerEdge(
-            nz_edge_load_specs(schema_file, args.nz_schema_file_type),
+            nz_edge_load_sources(schema_file, args.nz_schema_file_type),
         )
     else:
         faker: NaFaker = NZFakerField(

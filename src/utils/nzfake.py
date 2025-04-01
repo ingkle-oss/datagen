@@ -603,18 +603,18 @@ class NZFakerField:
 
 
 class NZFakerEdge:
-    dataspecs: dict[str, list[EdgeDataSpec]] = []
+    datasources: dict[str, list[EdgeDataSpec]] = []
 
     def __init__(self, dataspecs: dict[str, list[EdgeDataSpec]]):
         self.fake = Faker(use_weighting=False)
-        self.dataspecs = dataspecs
+        self.datasources = dataspecs
 
     def get_schema(self) -> dict[str, list[EdgeDataSpec]]:
-        return self.dataspecs
+        return self.datasources
 
     def values(self) -> dict[str, any]:
         values = {}
-        for src, specs in self.dataspecs.items():
+        for src, specs in self.datasources.items():
             fmt = ""
             vals = []
             for spec in specs:
