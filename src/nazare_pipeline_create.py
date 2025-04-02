@@ -73,5 +73,4 @@ if __name__ == "__main__":
         args.nz_pipeline_type,
         args.nz_pipeline_deltasync_enabled,
         args.nz_pipeline_retention,
-        logger=logging,
     )

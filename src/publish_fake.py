@@ -1,4 +1,5 @@
 import argparse
+import atexit
 import logging
 import signal
 import sys
@@ -9,12 +10,24 @@ from zoneinfo import ZoneInfo
 
 import paho.mqtt.client as mqtt
 
-
 from utils.nazare import Field, nz_load_fields, nz_pipeline_create
 from utils.nzfake import NZFakerField
-
-
 from utils.utils import download_s3file, encode
+
+
+def _cleanup(mqttc: mqtt.Client):
+    logging.info("Clean up...")
+    # signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)
+    mqttc.loop_stop()
+    mqttc.disconnect()
+    # signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    # signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _signal_handler(sig, frame):
+    logging.warning("Interrupted")
+    sys.exit(0)
 
 
 def on_connect(client: mqtt.Client, userdata, flags, rc, properties):
@@ -79,9 +92,9 @@ if __name__ == "__main__":
     parser.add_argument("--nz-schema-file", help="Schema file", required=True)
     parser.add_argument(
         "--nz-schema-file-type",
-        help="Schema file type",
-        choices=["csv", "jsonl", "bsonl"],
-        default="jsonl",
+        help="Nazare Schema file type",
+        choices=["csv", "json", "jsonl", "bson"],
+        default="json",
     )
 
     parser.add_argument(
@@ -192,7 +205,6 @@ if __name__ == "__main__":
             fields,
             args.pipeline_deltasync_enabled,
             args.pipeline_retention,
-            logger=logging,
         )
 
     custom_row = {}
@@ -222,17 +234,12 @@ if __name__ == "__main__":
     mqttc.on_connect = on_connect
     mqttc.on_disconnect = on_disconnect
 
-    def signal_handler(sig, frame):
-        logging.warning("Interrupted")
-        mqttc.loop_stop()
-        mqttc.disconnect()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
     mqttc.connect(host=args.mqtt_host, port=args.mqtt_port)
     mqttc.loop_start()
+
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    atexit.register(_cleanup, mqttc=mqttc)
 
     fake = NZFakerField(
         fields,
@@ -242,45 +249,40 @@ if __name__ == "__main__":
         ZoneInfo(args.fake_timestamp_tzinfo),
     )
 
-    try:
-        while True:
-            elapsed = 0
-            start_time = datetime.now(timezone.utc)
-            for _ in range(args.rate):
-                ts = start_time + timedelta(seconds=elapsed)
-                row = fake.values() | custom_row
+    while True:
+        elapsed = 0
+        start_time = datetime.now(timezone.utc)
+        for _ in range(args.rate):
+            ts = start_time + timedelta(seconds=elapsed)
+            row = fake.values() | custom_row
 
-                if args.date_enabled:
-                    if "date" in row:
-                        del row["date"]
-                    row = {"date": ts.date()} | row
-                if args.timestamp_enabled:
-                    if "timestamp" in row:
-                        del row["timestamp"]
-                    row = {"timestamp": int(ts.timestamp() * 1e6)} | row
+            if args.date_enabled:
+                if "date" in row:
+                    del row["date"]
+                row = {"date": ts.date()} | row
+            if args.timestamp_enabled:
+                if "timestamp" in row:
+                    del row["timestamp"]
+                row = {"timestamp": int(ts.timestamp() * 1e6)} | row
 
-                try:
-                    ret = mqttc.publish(
-                        topic=args.mqtt_topic,
-                        payload=encode(row, args.output_type),
-                        qos=args.mqtt_qos,
-                    )
-                    ret.wait_for_publish()
-                    logging.debug(
-                        "Published mid: %s, return code: %s, row: %s",
-                        ret.mid,
-                        ret.rc,
-                        row,
-                    )
-                except RuntimeError as e:
-                    logging.error("RuntimeError: %s", e)
+            try:
+                ret = mqttc.publish(
+                    topic=args.mqtt_topic,
+                    payload=encode(row, args.output_type),
+                    qos=args.mqtt_qos,
+                )
+                ret.wait_for_publish()
+                logging.debug(
+                    "Published mid: %s, return code: %s, row: %s",
+                    ret.mid,
+                    ret.rc,
+                    row,
+                )
+            except RuntimeError as e:
+                logging.error("MQTT publishing error: %s", e)
 
-                elapsed += interval
+            elapsed += interval
 
-            wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
-            wait = 0.0 if wait < 0 else wait
-            time.sleep(wait)
-    finally:
-        mqttc.loop_stop()
-        mqttc.disconnect()
-        logging.info("Finished")
+        wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
+        wait = 0.0 if wait < 0 else wait
+        time.sleep(wait)

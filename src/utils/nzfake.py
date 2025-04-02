@@ -603,23 +603,23 @@ class NZFakerField:
 
 
 class NZFakerEdge:
-    datasources: dict[str, list[EdgeDataSpec]] = []
+    datasources: list[tuple[str, str, list[EdgeDataSpec]]] = []
 
-    def __init__(self, dataspecs: dict[str, list[EdgeDataSpec]]):
+    def __init__(self, datasources: list[tuple[str, str, list[EdgeDataSpec]]]):
         self.fake = Faker(use_weighting=False)
-        self.datasources = dataspecs
+        self.datasources = datasources
 
-    def get_schema(self) -> dict[str, list[EdgeDataSpec]]:
+    def get_schema(self) -> list[tuple[str, str, list[EdgeDataSpec]]]:
         return self.datasources
 
     def values(self) -> dict[str, any]:
-        values = {}
-        for src, specs in self.datasources.items():
-            fmt = ""
+        values: dict[str, bytes] = {}
+
+        for src_id, format, specs in self.datasources:
             vals = []
-            for spec in specs:
-                fmt += spec.format
+            for spec in sorted(specs, key=lambda x: x.index):
                 vals.extend(_gen_spec_values(spec))
-            values[src] = struct.pack(fmt, *vals)
+            print(vals)
+            values[src_id] = struct.pack(format, *vals)
 
         return values

@@ -4,7 +4,6 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-confluent-kafka = "*"
 faker = "*"
 fastnumbers = "*"
 boto3 = "*"
@@ -22,6 +21,7 @@ pydantic = "*"
 pymongo = "*"
 orjson = "*"
 pyarrow = "*"
+confluent-kafka = "*"
 
 [dev-packages]
 black = "*"

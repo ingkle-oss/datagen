@@ -89,172 +89,6 @@ class EdgeDataSource(BaseModel):
     registerType: str | None = None
 
 
-def _edge_encode(spec: EdgeDataSpec, row: dict) -> list[int]:
-    if spec.is_null:
-        if spec.format == "c":
-            return [b"0"]
-        return [0]
-
-    values = []
-    if spec.type == EdgeDataSpecType.DIGITAL and spec.bits:
-        bits = 0
-        for bit in reversed(spec.bits):
-            if bit and row.get(spec.edgeDataSpecId + "@" + bit, 0) in [
-                "true",
-                "True",
-                "1",
-                1,
-            ]:
-                bit = 1
-            else:
-                bit = 0
-
-            bits = (bits << 1) | bit
-
-        # Convert to Signed integer value
-        if spec.format == "b":
-            bits = bits | (-(bits & 0x80))
-        elif spec.format == "h":
-            bits = bits | (-(bits & 0x8000))
-        elif spec.format == "i" or spec.format == "l":
-            bits = bits | (-(bits & 0x80000000))
-        elif spec.format == "q":
-            bits = bits | (-(bits & 0x8000000000000000))
-        elif (
-            spec.format != "B"
-            and spec.format != "H"
-            and spec.format != "I"
-            and spec.format != "L"
-            and spec.format != "Q"
-        ):
-            logging.error(
-                "Unsupported format for bits, use 0 value, spec_id: %s, format: %s, bit: %s",
-                spec.edgeDataSpecId,
-                spec.format,
-                bit,
-            )
-            return [0]
-
-        values.append(bits)
-    else:
-        value = row.get(spec.edgeDataSpecId, None)
-        if value is None:
-            return [0]
-
-        value = STRUCT_FMT.get(spec.format[-1:], float)(value)
-        if (
-            spec.format.endswith("c")
-            or spec.format.endswith("s")
-            or spec.format.endswith("p")
-        ):
-            try:
-                value = str(value).encode("utf-8")
-            except UnicodeEncodeError:
-                logging.error(
-                    "Encoding error, spec_id: %s, format: %s, value: %s",
-                    spec.edgeDataSpecId,
-                    spec.format,
-                    value,
-                )
-                value = ""
-
-        values.append(value)
-
-    return values
-
-
-def nz_edge_row_encode(row: dict, datasources: dict[str, list[EdgeDataSpec]]) -> bytes:
-    values: dict[str, bytes] = {}
-
-    for src_id, specs in datasources.items():
-        format = ""
-        _vals = []
-        for spec in sorted(specs, key=lambda x: x.index):
-            format += spec.format
-            _vals.extend(_edge_encode(spec, row))
-        values[src_id] = struct.pack(format, *_vals)
-    return values
-
-
-def _edge_decode(spec: EdgeDataSpec, value: any) -> dict:
-    if value is None or spec.is_null:
-        return {}
-
-    values = {}
-    if spec.type == EdgeDataSpecType.DIGITAL and spec.bits:
-        # Convert signed to unsigned integer
-        if spec.format == "b":
-            value = value + (1 << 8)
-        elif spec.format == "h":
-            value = value + (1 << 16)
-        elif spec.format == "i":
-            value = value + (1 << 32)
-        elif spec.format == "q":
-            value = value + (1 << 64)
-        elif (
-            spec.format != "B"
-            and spec.format != "H"
-            and spec.format != "I"
-            and spec.format != "L"
-            and spec.format != "Q"
-        ):
-            logging.error(
-                "Unsupported format for bits, send it to triage, spec_id: %s, format: %s, value: %s",
-                spec.edgeDataSpecId,
-                spec.format,
-                value,
-            )
-            return {TRIAGE_PREFIX + spec.edgeDataSpecId: value}
-
-        for bit in spec.bits:
-            if bit:
-                values[spec.edgeDataSpecId + "@" + bit] = bool(value & 0b1)
-            value = value >> 1
-    else:
-        if (
-            spec.format.endswith("c")
-            or spec.format.endswith("s")
-            or spec.format.endswith("p")
-        ):
-            try:
-                values[spec.edgeDataSpecId] = STRUCT_FMT.get(spec.format[-1:], float)(
-                    value.decode("utf-8")
-                )
-            except UnicodeDecodeError:
-                logging.error(
-                    "Decoding error, send it to triage, spec_id: %s, format: %s, value: %s",
-                    spec.edgeDataSpecId,
-                    spec.format,
-                    value,
-                )
-                return {TRIAGE_PREFIX + spec.edgeDataSpecId: value}
-        else:
-            values[spec.edgeDataSpecId] = STRUCT_FMT.get(spec.format[-1:], float)(value)
-
-    return values
-
-
-def nz_edge_row_decode(row: dict, datasources: dict[str, list[EdgeDataSpec]]) -> dict:
-    values = {}
-    for src_id, packed in row.items():
-        if packed is None:
-            continue
-
-        if src_id not in datasources:
-            values[src_id] = packed
-            continue
-
-        specs = datasources[src_id]
-        format = "".join([spec.format for spec in specs])
-        unpacked = struct.unpack(format, packed)
-
-        logging.debug("unpacked: %s", unpacked)
-        for idx, spec in enumerate(specs):
-            values.update(_edge_decode(spec, unpacked[idx]))
-
-    return values
-
-
 def _split(formats, format, prefix=None):
     for fmt in re.findall(r"\d+|\D+", format):
         if fmt.isdigit():
@@ -352,14 +186,196 @@ def _datasource_to_dataspecs(datasource: EdgeDataSource) -> list[EdgeDataSpec]:
     return data_specs
 
 
-def nz_edge_load_sources(file: str, file_type: str) -> dict[str, list[EdgeDataSpec]]:
+def edge_load_sources(
+    file: str, file_type: str
+) -> list[tuple[str, str, list[EdgeDataSpec]]]:
     sources = _load_sources(file, file_type)
 
-    datasources = {}
+    datasources = []
     for source in sources:
-        datasources[source.edgeDataSourceId] = _datasource_to_dataspecs(source)
+        datasources.append(
+            (
+                source.edgeDataSourceId,
+                source.payload["format"],
+                _datasource_to_dataspecs(source),
+            )
+        )
+
+        logging.info(datasources)
 
     return datasources
+
+
+def _edge_encode(spec: EdgeDataSpec, row: dict) -> list[int]:
+    if spec.is_null:
+        if spec.format == "c":
+            return [b"0"]
+        return [0]
+
+    values = []
+    if spec.type == EdgeDataSpecType.DIGITAL and spec.bits:
+        bits = 0
+        for bit in reversed(spec.bits):
+            if bit and row.get(spec.edgeDataSpecId + "@" + bit, 0) in [
+                "true",
+                "True",
+                "1",
+                1,
+            ]:
+                bit = 1
+            else:
+                bit = 0
+
+            bits = (bits << 1) | bit
+
+        # Convert to Signed integer value
+        if spec.format == "b":
+            bits = bits | (-(bits & 0x80))
+        elif spec.format == "h":
+            bits = bits | (-(bits & 0x8000))
+        elif spec.format == "i" or spec.format == "l":
+            bits = bits | (-(bits & 0x80000000))
+        elif spec.format == "q":
+            bits = bits | (-(bits & 0x8000000000000000))
+        elif (
+            spec.format != "B"
+            and spec.format != "H"
+            and spec.format != "I"
+            and spec.format != "L"
+            and spec.format != "Q"
+        ):
+            logging.error(
+                "Unsupported format for bits, use 0 value, spec_id: %s, format: %s, bit: %s",
+                spec.edgeDataSpecId,
+                spec.format,
+                bit,
+            )
+            return [0]
+
+        values.append(bits)
+    else:
+        value = row.get(spec.edgeDataSpecId, None)
+        if value is None:
+            return [0]
+
+        value = STRUCT_FMT.get(spec.format[-1:], float)(value)
+        if (
+            spec.format.endswith("c")
+            or spec.format.endswith("s")
+            or spec.format.endswith("p")
+        ):
+            try:
+                value = str(value).encode("utf-8")
+            except UnicodeEncodeError:
+                logging.error(
+                    "Encoding error, spec_id: %s, format: %s, value: %s",
+                    spec.edgeDataSpecId,
+                    spec.format,
+                    value,
+                )
+                value = ""
+
+        values.append(value)
+
+    return values
+
+
+def edge_row_encode(
+    row: dict,
+    datasources: list[tuple[str, str, list[EdgeDataSpec]]],
+) -> bytes:
+    values: dict[str, bytes] = {}
+
+    for src_id, format, specs in datasources:
+        vals = []
+        for spec in sorted(specs, key=lambda x: x.index):
+            vals.extend(_edge_encode(spec, row))
+        values[src_id] = struct.pack(format, *vals)
+
+    return values
+
+
+def _edge_decode(spec: EdgeDataSpec, value: any) -> dict:
+    if value is None or spec.is_null:
+        return {}
+
+    values = {}
+    if spec.type == EdgeDataSpecType.DIGITAL and spec.bits:
+        # Convert signed to unsigned integer
+        if spec.format == "b":
+            value = value + (1 << 8)
+        elif spec.format == "h":
+            value = value + (1 << 16)
+        elif spec.format == "i":
+            value = value + (1 << 32)
+        elif spec.format == "q":
+            value = value + (1 << 64)
+        elif (
+            spec.format != "B"
+            and spec.format != "H"
+            and spec.format != "I"
+            and spec.format != "L"
+            and spec.format != "Q"
+        ):
+            logging.error(
+                "Unsupported format for bits, send it to triage, spec_id: %s, format: %s, value: %s",
+                spec.edgeDataSpecId,
+                spec.format,
+                value,
+            )
+            return {TRIAGE_PREFIX + spec.edgeDataSpecId: value}
+
+        for bit in spec.bits:
+            if bit:
+                values[spec.edgeDataSpecId + "@" + bit] = bool(value & 0b1)
+            value = value >> 1
+    else:
+        if (
+            spec.format.endswith("c")
+            or spec.format.endswith("s")
+            or spec.format.endswith("p")
+        ):
+            try:
+                values[spec.edgeDataSpecId] = STRUCT_FMT.get(spec.format[-1:], float)(
+                    value.decode("utf-8")
+                )
+            except UnicodeDecodeError:
+                logging.error(
+                    "Decoding error, send it to triage, spec_id: %s, format: %s, value: %s",
+                    spec.edgeDataSpecId,
+                    spec.format,
+                    value,
+                )
+                return {TRIAGE_PREFIX + spec.edgeDataSpecId: value}
+        else:
+            values[spec.edgeDataSpecId] = STRUCT_FMT.get(spec.format[-1:], float)(value)
+
+    return values
+
+
+def edge_row_decode(
+    row: dict,
+    datasources: list[tuple[str, str, list[EdgeDataSpec]]],
+) -> dict:
+    values = {}
+    for src_id, packed in row.items():
+        if packed is None:
+            continue
+
+        _src_id, format, specs = next(
+            (d for d in datasources if d[0] == src_id), (None, None, None)
+        )
+        if _src_id is None:
+            values[src_id] = packed
+            continue
+
+        unpacked = struct.unpack(format, packed)
+        logging.debug("unpacked: %s", unpacked)
+
+        for spec in sorted(specs, key=lambda x: x.index):
+            values.update(_edge_decode(spec, unpacked[spec.index]))
+
+    return values
 
 
 # * Field

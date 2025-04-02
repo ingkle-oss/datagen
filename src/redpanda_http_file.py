@@ -3,8 +3,11 @@
 # https://docs.redpanda.com/current/develop/http-proxy/?tab=tabs-1-redpanda-yaml
 
 import argparse
+import atexit
 import json
 import logging
+import signal
+import sys
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
@@ -14,11 +17,25 @@ import urllib3
 
 from utils.nazare import (
     NzRowTransformer,
-    nz_edge_row_encode,
-    nz_edge_load_sources,
+    edge_load_sources,
+    edge_row_encode,
     nz_pipeline_create,
 )
 from utils.utils import LoadRows, download_s3file, encode, eval_create_func
+
+
+def _cleanup():
+    logging.info("Clean up...")
+    # signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)
+    # signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    # signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _signal_handler(sig, frame):
+    logging.warning("Interrupted")
+    sys.exit(0)
+
 
 INCREMENTAL_IDX = 0
 INTERVAL_DIFF_PREV = None
@@ -228,7 +245,7 @@ if __name__ == "__main__":
         "--nz-schema-file-type",
         help="Nazare Schema file type",
         choices=["csv", "json", "jsonl", "bson"],
-        default="jsonl",
+        default="json",
     )
     parser.add_argument(
         "--nz-api-url",
@@ -282,7 +299,6 @@ if __name__ == "__main__":
             "EDGE" if args.output_type == "edge" else "KAFKA",
             args.nz_pipeline_deltasync_enabled,
             args.nz_pipeline_retention,
-            logger=logging,
         )
 
     datasources = []
@@ -291,7 +307,7 @@ if __name__ == "__main__":
             raise RuntimeError(
                 "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
             )
-        datasources = nz_edge_load_sources(schema_file, args.nz_schema_file_type)
+        datasources = edge_load_sources(schema_file, args.nz_schema_file_type)
 
     custom_row = {}
     for kv in args.custom_row:
@@ -325,6 +341,10 @@ if __name__ == "__main__":
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     scheme = "https" if args.redpanda_ssl else "http"
 
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    atexit.register(_cleanup)
+
     with LoadRows(filepath, args.input_type) as rows:
         while True:
             elapsed = 0
@@ -342,7 +362,7 @@ if __name__ == "__main__":
                 row = row | custom_row
 
                 if args.output_type == "edge":
-                    row = nz_edge_row_encode(row, datasources)
+                    row = edge_row_encode(row, datasources)
 
                 if args.date_enabled:
                     if "date" in row:

@@ -3,8 +3,11 @@
 # https://docs.redpanda.com/current/develop/http-proxy/?tab=tabs-1-redpanda-yaml
 
 import argparse
+import atexit
 import json
 import logging
+import signal
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -15,6 +18,20 @@ import urllib3
 from utils.nazare import Field, nz_load_fields, nz_pipeline_create
 from utils.nzfake import NZFakerField
 from utils.utils import download_s3file, encode
+
+
+def _cleanup():
+    logging.info("Clean up...")
+    # signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)
+    # signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    # signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _signal_handler(sig, frame):
+    logging.warning("Interrupted")
+    sys.exit(0)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -64,7 +81,7 @@ if __name__ == "__main__":
         "--nz-schema-file-type",
         help="Schema file type",
         choices=["csv", "jsonl", "bsonl"],
-        default="jsonl",
+        default="json",
     )
     parser.add_argument(
         "--s3-endpoint",
@@ -195,6 +212,10 @@ if __name__ == "__main__":
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     scheme = "https" if args.redpanda_ssl else "http"
 
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    atexit.register(_cleanup)
+
     while True:
         elapsed = 0
         records = []
@@ -237,7 +258,7 @@ if __name__ == "__main__":
             verify=args.redpanda_verify,
         )
         res.raise_for_status()
-        logging.debug("%s, %s", records, args.output_type)
+        logging.debug("Posted: %s, %s", records, args.output_type)
         logging.info(
             "Total %s messages delivered: %s",
             len(records),

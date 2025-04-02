@@ -4,13 +4,31 @@
 # https://github.com/confluentinc/confluent-kafka-python/tree/master/examples
 
 import argparse
+import atexit
 import logging
+import signal
+import sys
 from datetime import datetime, timezone
 
 from confluent_kafka import Consumer
 
-from utils.nazare import nz_edge_row_decode, nz_edge_load_sources
+from utils.nazare import edge_load_sources, edge_row_decode
 from utils.utils import decode, download_s3file
+
+
+def _cleanup(consumer: Consumer):
+    logging.info("Clean up...")
+    # signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)
+    consumer.close()
+    # signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    # signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _signal_handler(sig, frame):
+    logging.warning("Interrupted")
+    sys.exit(0)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -20,7 +38,9 @@ if __name__ == "__main__":
         default="kafka.kafka.svc.cluster.local:9095",
     )
     parser.add_argument(
-        "--kafka-security-protocol", help="Kafka security protocol", default="SASL_SSL"
+        "--kafka-security-protocol",
+        help="Kafka security protocol",
+        default="SASL_PLAINTEXT",
     )
     parser.add_argument(
         "--kafka-sasl-mechanism", help="Kafka SASL mechanism", default="SCRAM-SHA-512"
@@ -32,31 +52,58 @@ if __name__ == "__main__":
         "--kafka-sasl-password", help="Kafka SASL plain password", required=True
     )
     parser.add_argument(
-        "--kafka-ssl-ca-location",
-        help="Kafka SSL CA file",
-        default=None,
+        "--kafka-ssl-ca-location", help="Kafka SSL CA file", default=None
     )
-
-    parser.add_argument(
-        "--kafka-group-id",
-        help="Kafka consumer group id",
-        default=f"pipeline-test-kafka-consumer-{int(datetime.now().timestamp())}",
-    )
-    parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
     parser.add_argument(
         "--kafka-auto-offset-reset",
         help="Kafka auto offset reset (earliest/latest)",
         default="latest",
     )
     parser.add_argument(
+        "--kafka-enable-auto-commit",
+        help="Kafka enable auto commit",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--kafka-auto-commit-interval-ms",
+        help="Kafka auto commit interval ms",
+        type=int,
+        default=5000,
+    )
+    parser.add_argument(
+        "--kafka-fetch-min-bytes",
+        help="Kafka fetch min bytes",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--kafka-session-timeout-ms",
+        help="Kafka session timeout ms",
+        type=int,
+        default=45000,
+    )
+    parser.add_argument(
+        "--kafka-group-id",
+        help="Kafka consumer group id",
+        default=f"consumer-test-{int(datetime.now().timestamp())}",
+    )
+    parser.add_argument(
+        "--kafka-consume-count", help="Kafka consume count", type=int, default=1
+    )
+    parser.add_argument(
+        "--kafka-consume-timeout",
+        help="Kafka consume timeout",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
+
+    parser.add_argument(
         "--input-type",
         help="Input message type",
         choices=["csv", "json", "bson", "txt", "edge"],
         default="txt",
-    )
-    parser.add_argument("--count", help="Kafka consumer count", type=int, default=1)
-    parser.add_argument(
-        "--timeout", help="Kafka consumer timeout", type=float, default=1.0
     )
 
     # Nazare Specific Options
@@ -65,7 +112,7 @@ if __name__ == "__main__":
         "--nz-schema-file-type",
         help="Nazare Schema file type",
         choices=["csv", "json", "jsonl", "bson"],
-        default="jsonl",
+        default="json",
     )
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
@@ -87,7 +134,7 @@ if __name__ == "__main__":
             schema_file = download_s3file(
                 schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
             )
-        datasources = nz_edge_load_sources(schema_file, args.nz_schema_file_type)
+        datasources = edge_load_sources(schema_file, args.nz_schema_file_type)
 
     # https://docs.confluent.io/platform/current/installation/configuration/consumer-configs.html
     configs = {
@@ -95,6 +142,10 @@ if __name__ == "__main__":
         "security.protocol": args.kafka_security_protocol,
         "group.id": args.kafka_group_id,
         "auto.offset.reset": args.kafka_auto_offset_reset,
+        "enable.auto.commit": args.kafka_enable_auto_commit,
+        "auto.commit.interval.ms": args.kafka_auto_commit_interval_ms,
+        "fetch.min.bytes": args.kafka_fetch_min_bytes,
+        "session.timeout.ms": args.kafka_session_timeout_ms,
     }
     if args.kafka_security_protocol.startswith("SASL"):
         configs.update(
@@ -118,52 +169,50 @@ if __name__ == "__main__":
     consumer = Consumer(configs)
     consumer.subscribe([args.kafka_topic])
 
-    try:
-        while True:
-            logging.info(
-                "Consuming %d messages from topic...: %s for %s seconds",
-                args.count,
-                args.kafka_topic,
-                args.timeout,
-            )
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    atexit.register(_cleanup, consumer=consumer)
 
-            cnt = 0
-            prev = datetime.now(timezone.utc)
-            msgs = consumer.consume(args.count, timeout=args.timeout)
-            logging.info(
-                "Consumed %d messages from topic...: %s", len(msgs), args.kafka_topic
-            )
+    while True:
+        logging.info(
+            "Try consuming %d messages from topic...: %s for %s seconds",
+            args.kafka_consume_count,
+            args.kafka_topic,
+            args.kafka_consume_timeout,
+        )
 
-            for msg in msgs:
-                if msg is None:
-                    logging.info("No message received by consumer")
-                elif msg.error():
-                    logging.info("Consumer error: %s", msg.error())
-                try:
-                    values = decode(msg.value(), args.input_type)
-                    logging.debug(
-                        "Message received, partition: %s, offset: %s, key: %s, value:%s",
-                        msg.partition,
-                        msg.offset,
-                        msg.key,
-                        values,
-                    )
-                except Exception as e:
-                    logging.error("Error processing message: %s", e)
-                    continue
+        cnt = 0
+        prev = datetime.now(timezone.utc)
+        msgs = consumer.consume(
+            args.kafka_consume_count, timeout=args.kafka_consume_timeout
+        )
+        logging.info("Consumed %d messages...", len(msgs))
 
+        for msg in msgs:
+            if msg is None:
+                logging.info("No message received by consumer")
+            elif msg.error():
+                logging.info("Consumer error: %s", msg.error())
+            try:
+                values = decode(msg.value(), args.input_type)
                 if args.input_type == "edge":
-                    values = nz_edge_row_decode(values, datasources)
+                    values = edge_row_decode(values, datasources)
+                logging.debug(
+                    "Message received, partition: %s, offset: %s, key: %s, value:%s",
+                    msg.partition,
+                    msg.offset,
+                    msg.key,
+                    values,
+                )
+            except Exception as e:
+                logging.error("Message decoding error: %s", e)
+                continue
 
-                cnt += 1
-                logging.debug("Message decoded: %s:%s", msg.key, values)
+            logging.debug("Message decoded: %s:%s", msg.key, values)
+            cnt += 1
 
-            logging.info(
-                "Report: Message rate: %f records/sec",
-                float(cnt / (datetime.now(timezone.utc) - prev).total_seconds()),
-            )
-            cnt = 0
-
-    finally:
-        consumer.close()
-        logging.info("Finished")
+        logging.info(
+            "Message report, rate: %f records/sec",
+            cnt / (datetime.now(timezone.utc) - prev).total_seconds(),
+        )
+        cnt = 0

@@ -1,4 +1,5 @@
 import argparse
+import atexit
 import logging
 import signal
 import sys
@@ -10,11 +11,26 @@ import paho.mqtt.client as mqtt
 
 from utils.nazare import (
     NzRowTransformer,
-    nz_edge_row_encode,
-    nz_edge_load_sources,
+    edge_load_sources,
+    edge_row_encode,
     nz_pipeline_create,
 )
 from utils.utils import LoadRows, download_s3file, encode, eval_create_func
+
+
+def _cleanup(mqttc: mqtt.Client):
+    logging.info("Clean up...")
+    # signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)
+    mqttc.loop_stop()
+    mqttc.disconnect()
+    # signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    # signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _signal_handler(sig, frame):
+    logging.warning("Interrupted")
+    sys.exit(0)
 
 
 def on_connect(client: mqtt.Client, userdata, flags, rc, properties):
@@ -181,7 +197,7 @@ if __name__ == "__main__":
         "--nz-schema-file-type",
         help="Nazare Schema file type",
         choices=["csv", "json", "jsonl", "bson"],
-        default="jsonl",
+        default="json",
     )
     parser.add_argument(
         "--nz-api-url",
@@ -235,7 +251,6 @@ if __name__ == "__main__":
             "EDGE" if args.output_type == "edge" else "KAFKA",
             args.nz_pipeline_deltasync_enabled,
             args.nz_pipeline_retention,
-            logger=logging,
         )
 
     datasources = []
@@ -244,12 +259,12 @@ if __name__ == "__main__":
             raise RuntimeError(
                 "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
             )
-        datasources = nz_edge_load_sources(schema_file, args.nz_schema_file_type)
+        datasources = edge_load_sources(schema_file, args.nz_schema_file_type)
 
     custom_row = {}
     for kv in args.custom_row:
-        key, row = kv.split("=")
-        custom_row[key] = row
+        key, val = kv.split("=")
+        custom_row[key] = val
 
     eval_func = None
     if args.eval_field and args.eval_field_expr:
@@ -295,71 +310,59 @@ if __name__ == "__main__":
     mqttc.on_connect = on_connect
     mqttc.on_disconnect = on_disconnect
 
-    def signal_handler(sig, frame):
-        logging.warning("Interrupted")
-        mqttc.loop_stop()
-        mqttc.disconnect()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
     mqttc.connect(host=args.mqtt_host, port=args.mqtt_port)
     mqttc.loop_start()
 
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    atexit.register(_cleanup, mqttc=mqttc)
+
     with LoadRows(filepath, args.input_type) as rows:
-        try:
-            while True:
-                elapsed = 0
-                start_time = datetime.now(timezone.utc)
-                for _ in range(args.rate):
-                    ts = start_time + timedelta(seconds=elapsed)
+        while True:
+            elapsed = 0
+            start_time = datetime.now(timezone.utc)
+            for _ in range(args.rate):
+                ts = start_time + timedelta(seconds=elapsed)
 
-                    try:
-                        row = next(rows)
-                    except StopIteration:
-                        rows.rewind()
-                        row = next(rows)
-                    row, interval = tf.transform(row, ts, args.interval)
-                    row = row | custom_row
+                try:
+                    row = next(rows)
+                except StopIteration:
+                    rows.rewind()
+                    row = next(rows)
+                row, interval = tf.transform(row, ts, args.interval)
+                row = row | custom_row
 
-                    if args.output_type == "edge":
-                        row = nz_edge_row_encode(row, datasources)
+                if args.output_type == "edge":
+                    row = edge_row_encode(row, datasources)
 
-                    if args.date_enabled:
-                        if "date" in row:
-                            del row["date"]
-                        row = {"date": ts.date()} | row
-                    if args.timestamp_enabled:
-                        if "timestamp" in row:
-                            del row["timestamp"]
-                        row = {"timestamp": int(ts.timestamp() * 1e6)} | row
+                if args.date_enabled:
+                    if "date" in row:
+                        del row["date"]
+                    row = {"date": ts.date()} | row
+                if args.timestamp_enabled:
+                    if "timestamp" in row:
+                        del row["timestamp"]
+                    row = {"timestamp": int(ts.timestamp() * 1e6)} | row
 
-                    try:
-                        val = encode(row, args.output_type)
-                        ret = mqttc.publish(
-                            topic=args.mqtt_topic,
-                            payload=val,
-                            qos=args.mqtt_qos,
-                        )
-                        ret.wait_for_publish()
-                        logging.debug(
-                            "Published mid: %s, return code: %s, row: %s",
-                            ret.mid,
-                            ret.rc,
-                            val,
-                        )
-                    except RuntimeError as e:
-                        logging.error("RuntimeError: %s", e)
+                try:
+                    values = encode(row, args.output_type)
+                    ret = mqttc.publish(
+                        topic=args.mqtt_topic,
+                        payload=values,
+                        qos=args.mqtt_qos,
+                    )
+                    ret.wait_for_publish()
+                    logging.debug(
+                        "Published mid: %s, return code: %s, row: %s",
+                        ret.mid,
+                        ret.rc,
+                        values,
+                    )
+                except RuntimeError as e:
+                    logging.error("MQTT publishing error: %s", e)
 
-                    elapsed += interval if interval > 0 else 0
+                elapsed += interval if interval > 0 else 0
 
-                wait = (
-                    elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
-                )
-                wait = 0.0 if wait < 0 else wait
-                time.sleep(wait)
-        finally:
-            mqttc.loop_stop()
-            mqttc.disconnect()
-            logging.info("Finished")
+            wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
+            wait = 0.0 if wait < 0 else wait
+            time.sleep(wait)

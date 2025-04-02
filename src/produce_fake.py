@@ -4,16 +4,34 @@
 # https://github.com/confluentinc/confluent-kafka-python/tree/master/examples
 
 import argparse
+import atexit
 import logging
+import signal
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from confluent_kafka import KafkaException, Producer
 
-from utils.nazare import nz_edge_load_sources, nz_load_fields, nz_pipeline_create
+from utils.nazare import edge_load_sources, nz_load_fields, nz_pipeline_create
 from utils.nzfake import NaFaker, NZFakerEdge, NZFakerField
 from utils.utils import download_s3file, encode
+
+
+def _cleanup(producer: Producer):
+    logging.info("Clean up...")
+    # signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)
+    producer.flush()
+    # signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    # signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _signal_handler(sig, frame):
+    logging.warning("Interrupted")
+    sys.exit(0)
+
 
 REPORT_COUNT = 0
 
@@ -63,19 +81,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--kafka-sasl-password", help="Kafka SASL plain password", required=True
     )
-    parser.add_argument(
-        "--kafka-ssl-ca-location", help="Kafka SSL CA file", default=None
-    )
-    parser.add_argument(
-        "--kafka-auto-offset-reset",
-        help="Kafka auto offset reset (earliest/latest)",
-        default="latest",
-    )
-    parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
-    parser.add_argument(
-        "--kafka-partition", help="Kafka partition", type=int, default=0
-    )
-    parser.add_argument("--kafka-key", help="Kafka partition key", default=None)
+    parser.add_argument("--kafka-ssl-ca-location", help="Kafka SSL CA file")
+    # Kafka producer configs
     parser.add_argument(
         "--kafka-compression-type",
         help="Kafka producer compression type",
@@ -120,6 +127,12 @@ if __name__ == "__main__":
         type=int,
         default=10,
     )
+    # Kafka others
+    parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
+    parser.add_argument(
+        "--kafka-partition", help="Kafka partition", type=int, default=0
+    )
+    parser.add_argument("--kafka-key", help="Kafka partition key")
 
     # File
     parser.add_argument(
@@ -181,7 +194,7 @@ if __name__ == "__main__":
         "--nz-schema-file-type",
         help="Nazare Schema file type",
         choices=["csv", "json", "jsonl", "bson"],
-        default="jsonl",
+        default="json",
     )
     parser.add_argument(
         "--nz-api-url",
@@ -252,7 +265,6 @@ if __name__ == "__main__":
             "EDGE" if args.output_type == "edge" else "KAFKA",
             args.nz_pipeline_deltasync_enabled,
             args.nz_pipeline_retention,
-            logger=logging,
         )
 
     faker: NaFaker = None
@@ -262,7 +274,7 @@ if __name__ == "__main__":
                 "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
             )
         faker: NZFakerEdge = NZFakerEdge(
-            nz_edge_load_sources(schema_file, args.nz_schema_file_type),
+            edge_load_sources(schema_file, args.nz_schema_file_type),
         )
     else:
         faker: NaFaker = NZFakerField(
@@ -282,7 +294,6 @@ if __name__ == "__main__":
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
     configs = {
-        "auto.offset.reset": args.kafka_auto_offset_reset,
         "bootstrap.servers": args.kafka_bootstrap_servers,
         "security.protocol": args.kafka_security_protocol,
         "compression.type": args.kafka_compression_type,
@@ -317,6 +328,10 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    atexit.register(_cleanup, producer=producer)
+
     while True:
         elapsed = 0
         start_time = datetime.now(timezone.utc)
@@ -336,17 +351,17 @@ if __name__ == "__main__":
 
             producer.poll(0)
             try:
-                val = encode(row, args.output_type)
+                values = encode(row, args.output_type)
                 producer.produce(
                     topic=args.kafka_topic,
-                    value=val,
+                    value=values,
                     key=args.kafka_key.encode("utf-8") if args.kafka_key else None,
                     partition=args.kafka_partition,
                     on_delivery=delivery_report,
                 )
-                logging.debug("Produced: %s:%s", args.kafka_key, val)
+                logging.debug("Produced: %s:%s", args.kafka_key, values)
             except KafkaException as e:
-                logging.error("KafkaException: %s", e)
+                logging.error("Kafka producing error: %s", e)
 
             elapsed += interval
 
@@ -356,6 +371,3 @@ if __name__ == "__main__":
         wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
         wait = 0.0 if wait < 0 else wait
         time.sleep(wait)
-
-    producer.flush()
-    logging.info("Finished")

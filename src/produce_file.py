@@ -5,7 +5,10 @@
 
 
 import argparse
+import atexit
 import logging
+import signal
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -13,11 +16,26 @@ from confluent_kafka import KafkaException, Producer
 
 from utils.nazare import (
     NzRowTransformer,
-    nz_edge_row_encode,
-    nz_edge_load_sources,
+    edge_load_sources,
+    edge_row_encode,
     nz_pipeline_create,
 )
 from utils.utils import LoadRows, download_s3file, encode, eval_create_func
+
+
+def _cleanup(producer: Producer):
+    logging.info("Clean up...")
+    # signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    # signal.signal(signal.SIGINT, signal.SIG_IGN)
+    producer.flush()
+    # signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    # signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _signal_handler(sig, frame):
+    logging.warning("Interrupted")
+    sys.exit(0)
+
 
 REPORT_COUNT = 0
 
@@ -68,16 +86,7 @@ if __name__ == "__main__":
         "--kafka-sasl-password", help="Kafka SASL plain password", required=True
     )
     parser.add_argument("--kafka-ssl-ca-location", help="Kafka SSL CA file")
-    parser.add_argument(
-        "--kafka-auto-offset-reset",
-        help="Kafka auto offset reset (earliest/latest)",
-        default="latest",
-    )
-    parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
-    parser.add_argument(
-        "--kafka-partition", help="Kafka partition", type=int, default=0
-    )
-    parser.add_argument("--kafka-key", help="Kafka partition key")
+    # Kafka producer configs
     parser.add_argument(
         "--kafka-compression-type",
         help="Kafka producer compression type",
@@ -122,6 +131,12 @@ if __name__ == "__main__":
         type=int,
         default=10,
     )
+    # Kafka others
+    parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
+    parser.add_argument(
+        "--kafka-partition", help="Kafka partition", type=int, default=0
+    )
+    parser.add_argument("--kafka-key", help="Kafka partition key")
 
     # File
     parser.add_argument("--input-filepath", help="file to be produced", required=True)
@@ -228,7 +243,7 @@ if __name__ == "__main__":
         "--nz-schema-file-type",
         help="Nazare Schema file type",
         choices=["csv", "json", "jsonl", "bson"],
-        default="jsonl",
+        default="json",
     )
     parser.add_argument(
         "--nz-api-url",
@@ -282,7 +297,6 @@ if __name__ == "__main__":
             "EDGE" if args.output_type == "edge" else "KAFKA",
             args.nz_pipeline_deltasync_enabled,
             args.nz_pipeline_retention,
-            logger=logging,
         )
 
     datasources = []
@@ -291,12 +305,12 @@ if __name__ == "__main__":
             raise RuntimeError(
                 "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
             )
-        datasources = nz_edge_load_sources(schema_file, args.nz_schema_file_type)
+        datasources = edge_load_sources(schema_file, args.nz_schema_file_type)
 
     custom_row = {}
     for kv in args.custom_row:
-        key, row = kv.split("=")
-        custom_row[key] = row
+        key, val = kv.split("=")
+        custom_row[key] = val
 
     eval_func = None
     if args.eval_field and args.eval_field_expr:
@@ -325,7 +339,6 @@ if __name__ == "__main__":
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
     configs = {
-        "auto.offset.reset": args.kafka_auto_offset_reset,
         "bootstrap.servers": args.kafka_bootstrap_servers,
         "security.protocol": args.kafka_security_protocol,
         "compression.type": args.kafka_compression_type,
@@ -360,6 +373,10 @@ if __name__ == "__main__":
     logging.info("Producer created:")
     logging.info(configs)
 
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    atexit.register(_cleanup, producer=producer)
+
     with LoadRows(filepath, args.input_type) as rows:
         while True:
             elapsed = 0
@@ -376,7 +393,7 @@ if __name__ == "__main__":
                 row = row | custom_row
 
                 if args.output_type == "edge":
-                    row = nz_edge_row_encode(row, datasources)
+                    row = edge_row_encode(row, datasources)
 
                 if args.date_enabled:
                     if "date" in row:
@@ -389,17 +406,17 @@ if __name__ == "__main__":
 
                 producer.poll(0)
                 try:
-                    val = encode(row, args.output_type)
+                    values = encode(row, args.output_type)
                     producer.produce(
                         topic=args.kafka_topic,
-                        value=val,
+                        value=values,
                         key=args.kafka_key.encode("utf-8") if args.kafka_key else None,
                         partition=args.kafka_partition,
                         on_delivery=delivery_report,
                     )
-                    logging.debug("Produced: %s:%s", args.kafka_key, val)
+                    logging.debug("Produced: %s:%s", args.kafka_key, values)
                 except KafkaException as e:
-                    logging.error("KafkaException: %s", e)
+                    logging.error("Kafka producing error: %s", e)
 
                 elapsed += interval if interval > 0 else 0
 
