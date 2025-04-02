@@ -341,6 +341,7 @@ if __name__ == "__main__":
     configs = {
         "bootstrap.servers": args.kafka_bootstrap_servers,
         "security.protocol": args.kafka_security_protocol,
+        # Producer configs
         "compression.type": args.kafka_compression_type,
         "delivery.timeout.ms": args.kafka_delivery_timeout_ms,
         "linger.ms": args.kafka_linger_ms,

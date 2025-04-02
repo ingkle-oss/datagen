@@ -16,10 +16,12 @@ from utils.nazare import edge_load_sources, edge_row_decode
 from utils.utils import decode, download_s3file
 
 
-def _cleanup(consumer: Consumer):
+def _cleanup(consumer: Consumer, kafka_enable_auto_commit: bool, last_msg: any):
     logging.info("Clean up...")
     # signal.signal(signal.SIGTERM, signal.SIG_IGN)
     # signal.signal(signal.SIGINT, signal.SIG_IGN)
+    if not kafka_enable_auto_commit and last_msg is not None:
+        consumer.commit(message=last_msg, asynchronous=False)
     consumer.close()
     # signal.signal(signal.SIGTERM, signal.SIG_DFL)
     # signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -140,6 +142,7 @@ if __name__ == "__main__":
     configs = {
         "bootstrap.servers": args.kafka_bootstrap_servers,
         "security.protocol": args.kafka_security_protocol,
+        # Consumer configs
         "group.id": args.kafka_group_id,
         "auto.offset.reset": args.kafka_auto_offset_reset,
         "enable.auto.commit": args.kafka_enable_auto_commit,
@@ -169,9 +172,15 @@ if __name__ == "__main__":
     consumer = Consumer(configs)
     consumer.subscribe([args.kafka_topic])
 
+    last_msg = None
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
-    atexit.register(_cleanup, consumer=consumer)
+    atexit.register(
+        _cleanup,
+        consumer=consumer,
+        kafka_enable_auto_commit=args.kafka_enable_auto_commit,
+        last_msg=last_msg,
+    )
 
     while True:
         logging.info(
@@ -186,8 +195,6 @@ if __name__ == "__main__":
         msgs = consumer.consume(
             args.kafka_consume_count, timeout=args.kafka_consume_timeout
         )
-        logging.info("Consumed %d messages...", len(msgs))
-
         for msg in msgs:
             if msg is None:
                 logging.info("No message received by consumer")
@@ -197,6 +204,7 @@ if __name__ == "__main__":
                 values = decode(msg.value(), args.input_type)
                 if args.input_type == "edge":
                     values = edge_row_decode(values, datasources)
+                last_msg = msg
                 logging.debug(
                     "Message received, partition: %s, offset: %s, key: %s, value:%s",
                     msg.partition,
@@ -210,6 +218,10 @@ if __name__ == "__main__":
 
             logging.debug("Message decoded: %s:%s", msg.key, values)
             cnt += 1
+
+        logging.info("Consumed %d messages...", len(msgs))
+        if not args.kafka_enable_auto_commit and last_msg is not None:
+            consumer.commit(message=last_msg, asynchronous=False)
 
         logging.info(
             "Message report, rate: %f records/sec",
