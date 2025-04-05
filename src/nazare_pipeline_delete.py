@@ -8,7 +8,8 @@ from utils.nazare import nz_pipeline_delete
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    # NZStore REST API
+    # Nazare Specific Options
+    parser.add_argument("--nz-pipeline-name", help="Pipeline name", required=True)
     parser.add_argument(
         "--nz-api-url",
         help="Store API URL",
@@ -22,12 +23,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nz-api-password",
         help="Store API password",
-        required=True,
-    )
-
-    parser.add_argument(
-        "--nz-pipeline-name",
-        help="Pipeline name",
         required=True,
     )
 

@@ -37,8 +37,12 @@ if __name__ == "__main__":
         help="Nazare Store API URL",
         default="http://nzstore.nzstore.svc.cluster.local:8000/api/v1/pipelines",
     )
-    parser.add_argument("--nz-api-username", help="Nazare Store API username")
-    parser.add_argument("--nz-api-password", help="Nazare Store API password")
+    parser.add_argument(
+        "--nz-api-username", help="Nazare Store API username", required=True
+    )
+    parser.add_argument(
+        "--nz-api-password", help="Nazare Store API password", required=True
+    )
     parser.add_argument(
         "--nz-pipeline-retention", help="Retention (e.g. 60,d)", default=""
     )
@@ -57,11 +61,21 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    schema_file = args.nz_schema_file
-    if schema_file.startswith("s3a://"):
-        schema_file = download_s3file(
-            schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
+    schema_file = None
+    if args.nz_schema_file and args.nz_schema_file_type:
+        schema_file = args.nz_schema_file
+        if schema_file.startswith("s3a://"):
+            schema_file = download_s3file(
+                schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
+            )
+
+    if not schema_file:
+        raise RuntimeError(
+            "Please provide both --nz-schema-file and --nz-schema-file-type to create pipeline that requires schema file"
         )
+
+    if not args.nz_api_url or not args.nz_api_username or not args.nz_api_password:
+        raise RuntimeError("Nazare API credentials are required")
 
     nz_pipeline_create(
         args.nz_api_url,

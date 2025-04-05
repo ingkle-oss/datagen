@@ -73,8 +73,8 @@ Create, Delete a Nazare pipeline
 # Create pipeline
 python3 src/nazare_pipeline_create.py \
 --nz-api-url STORE_API_URL --nz-api-username STORE_API_USERNAME --nz-api-password STORE_API_PASSWORD \
---nz-pipeline-name PIPELINE_NAME -no-pipeline-deltasync --pipeline-retention '60,d' \
---nz-schema-file SCHEMA_FILE
+--nz-pipeline-name PIPELINE_NAME --nz-pipeline-type PIPELINE_TYPE -no-pipeline-deltasync --pipeline-retention '60,d' \
+--nz-schema-file SCHEMA_FILE --nz-schema-file-type SCHEMA_FILE_TYPE
 
 # Delete pipeline
 python3 src/nazare_pipeline_delete.py \

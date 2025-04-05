@@ -295,7 +295,9 @@ def edge_row_encode(
     return values
 
 
-def _edge_decode(spec: EdgeDataSpec, value: any) -> dict:
+def _edge_decode(
+    spec: EdgeDataSpec, value: any, logger: logging.Logger = logging
+) -> dict:
     if value is None or spec.is_null:
         return {}
 
@@ -317,7 +319,7 @@ def _edge_decode(spec: EdgeDataSpec, value: any) -> dict:
             and spec.format != "L"
             and spec.format != "Q"
         ):
-            logging.error(
+            logger.error(
                 "Unsupported format for bits, send it to triage, spec_id: %s, format: %s, value: %s",
                 spec.edgeDataSpecId,
                 spec.format,
@@ -340,7 +342,7 @@ def _edge_decode(spec: EdgeDataSpec, value: any) -> dict:
                     value.decode("utf-8")
                 )
             except UnicodeDecodeError:
-                logging.error(
+                logger.error(
                     "Decoding error, send it to triage, spec_id: %s, format: %s, value: %s",
                     spec.edgeDataSpecId,
                     spec.format,
@@ -356,6 +358,7 @@ def _edge_decode(spec: EdgeDataSpec, value: any) -> dict:
 def edge_row_decode(
     row: dict,
     datasources: list[tuple[str, str, list[EdgeDataSpec]]],
+    logger: logging.Logger = logging,
 ) -> dict:
     values = {}
     for src_id, packed in row.items():
@@ -370,10 +373,11 @@ def edge_row_decode(
             continue
 
         unpacked = struct.unpack(format, packed)
-        logging.debug("unpacked: %s", unpacked)
+        logger.debug("unpacked: %s", unpacked)
 
         for spec in sorted(specs, key=lambda x: x.index):
-            values.update(_edge_decode(spec, unpacked[spec.index]))
+            print(spec)
+            values.update(_edge_decode(spec, unpacked[spec.index], logger))
 
     return values
 
