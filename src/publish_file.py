@@ -11,7 +11,7 @@ import paho.mqtt.client as mqtt
 
 from utils.nazare import (
     NzRowTransformer,
-    edge_load_sources,
+    edge_load_datasources,
     edge_row_encode,
     nz_pipeline_create,
 )
@@ -259,7 +259,7 @@ if __name__ == "__main__":
             raise RuntimeError(
                 "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
             )
-        datasources = edge_load_sources(schema_file, args.nz_schema_file_type)
+        datasources = edge_load_datasources(schema_file, args.nz_schema_file_type)
 
     custom_row = {}
     for kv in args.custom_row:

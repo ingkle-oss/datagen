@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from confluent_kafka import Consumer
 
-from utils.nazare import edge_load_sources, edge_row_decode
+from utils.nazare import edge_load_datasources, edge_row_decode
 from utils.utils import decode, download_s3file
 
 
@@ -136,7 +136,7 @@ if __name__ == "__main__":
             schema_file = download_s3file(
                 schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
             )
-        datasources = edge_load_sources(schema_file, args.nz_schema_file_type)
+        datasources = edge_load_datasources(schema_file, args.nz_schema_file_type)
 
     # https://docs.confluent.io/platform/current/installation/configuration/consumer-configs.html
     configs = {

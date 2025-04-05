@@ -129,18 +129,6 @@ def _format_to_spec_type(format) -> EdgeDataSpecType:
     }.get(format[-1:], EdgeDataSpecType.ANALOG)
 
 
-def _load_sources(file: str, file_type: str) -> list[EdgeDataSource]:
-    rows = load_rows(file, file_type)
-    if len(rows) > 1000:
-        raise RuntimeError(f"Too many rows in the edge schema file: {len(rows)}")
-
-    sources = []
-    for row in rows:
-        sources.append(EdgeDataSource.model_validate(row))
-
-    return sources
-
-
 def _datasource_to_dataspecs(datasource: EdgeDataSource) -> list[EdgeDataSpec]:
     # ! Legacy format, fields, digitalFields
     formats = _split_payload_format(datasource.payload.get("format", []))
@@ -186,10 +174,22 @@ def _datasource_to_dataspecs(datasource: EdgeDataSource) -> list[EdgeDataSpec]:
     return data_specs
 
 
-def edge_load_sources(
-    file: str, file_type: str
+def _load_sources_from_file(file: str, file_type: str) -> list[EdgeDataSource]:
+    rows = load_rows(file, file_type)
+    if len(rows) > 1000:
+        raise RuntimeError(f"Too many rows in the edge schema file: {len(rows)}")
+
+    sources = []
+    for row in rows:
+        sources.append(EdgeDataSource.model_validate(row))
+
+    return sources
+
+
+def edge_load_datasources(
+    file: str, file_type: str, logger: logging.Logger = logging
 ) -> list[tuple[str, str, list[EdgeDataSpec]]]:
-    sources = _load_sources(file, file_type)
+    sources = _load_sources_from_file(file, file_type)
 
     datasources = []
     for source in sources:
@@ -200,8 +200,7 @@ def edge_load_sources(
                 _datasource_to_dataspecs(source),
             )
         )
-
-        logging.info(datasources)
+    logging.info(datasources)
 
     return datasources
 
@@ -515,7 +514,7 @@ def nz_pipeline_create(
         }
 
         datasources: list[EdgeDataSource] = []
-        for src in _load_sources(schema_file, schema_file_type):
+        for src in _load_sources_from_file(schema_file, schema_file_type):
             src.edgeId = None  # Remove for creating
             datasources.append(src.model_dump(exclude_none=True))
 
