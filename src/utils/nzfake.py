@@ -619,7 +619,6 @@ class NZFakerEdge:
             vals = []
             for spec in sorted(specs, key=lambda x: x.index):
                 vals.extend(_gen_spec_values(spec))
-            print(vals)
             values[src_id] = struct.pack(format, *vals)
 
         return values

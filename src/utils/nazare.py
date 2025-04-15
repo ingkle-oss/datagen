@@ -375,7 +375,6 @@ def edge_row_decode(
         logger.debug("unpacked: %s", unpacked)
 
         for spec in sorted(specs, key=lambda x: x.index):
-            print(spec)
             values.update(_edge_decode(spec, unpacked[spec.index], logger))
 
     return values
