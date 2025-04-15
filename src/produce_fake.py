@@ -138,7 +138,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--s3-endpoint",
         help="S3 url",
-        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:8333",
+        default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80",
     )
     parser.add_argument("--s3-accesskey", help="S3 accesskey")
     parser.add_argument("--s3-secretkey", help="S3 secretkey")

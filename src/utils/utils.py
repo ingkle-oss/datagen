@@ -12,8 +12,11 @@ import boto3
 import bson
 import orjson
 import pyarrow.dataset as ds
+from botocore.client import Config
 from bson.codec_options import CodecOptions, TypeCodec, TypeRegistry
 from fastnumbers import check_float
+
+s3_config = Config(connect_timeout=30, read_timeout=30, retries={"max_attempts": 0})
 
 
 def download_s3file(filepath: str, accesskey: str, secretkey: str, endpoint: str):
@@ -31,7 +34,7 @@ def download_s3file(filepath: str, accesskey: str, secretkey: str, endpoint: str
         region_name="ap-northeast-2",
     )
 
-    s3 = session.client(service_name="s3", endpoint_url=endpoint)
+    s3 = session.client(service_name="s3", endpoint_url=endpoint, config=s3_config)
     meta_data = s3.head_object(Bucket=src_bucket, Key=src_key)
     total_length = int(meta_data.get("ContentLength", 0))
 

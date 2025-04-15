@@ -463,7 +463,7 @@ def _pipeline_check(
         return False
 
     raise RuntimeError(
-        f"Failed to get table: {response.status_code}, {response.reason}"
+        f"Failed to get pipeline: {response.status_code}, {response.reason}"
     )
 
 
