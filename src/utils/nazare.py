@@ -518,7 +518,7 @@ def nz_pipeline_create(
             datasources.append(src.model_dump(exclude_none=True))
 
         data["edge_create"]["datasources_create"] = datasources
-    elif ingest_type == "KAFKA":
+    elif ingest_type == "KAFKA" or ingest_type == "MQTT":
         fields = []
         for field in nz_load_fields(schema_file, schema_file_type):
             fields.append(field.model_dump(exclude_none=True))

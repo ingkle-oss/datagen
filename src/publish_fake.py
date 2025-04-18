@@ -213,10 +213,10 @@ if __name__ == "__main__":
             args.nz_api_url,
             args.nz_api_username,
             args.nz_api_password,
-            args.kafka_topic,
+            args.mqtt_topic,
             args.nz_schema_file_type,
             schema_file,
-            "EDGE" if args.output_type == "edge" else "KAFKA",
+            "EDGE" if args.output_type == "edge" else "MQTT",
             args.nz_pipeline_deltasync_enabled,
             args.nz_pipeline_retention,
         )
