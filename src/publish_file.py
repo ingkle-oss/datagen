@@ -114,7 +114,6 @@ if __name__ == "__main__":
         choices=["csv", "json", "bson", "txt", "edge"],
         default="json",
     )
-
     parser.add_argument(
         "--custom-row",
         help="Custom key values (e.g. edge=test-edge)",

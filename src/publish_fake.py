@@ -10,8 +10,8 @@ from zoneinfo import ZoneInfo
 
 import paho.mqtt.client as mqtt
 
-from utils.nazare import Field, nz_load_fields, nz_pipeline_create
-from utils.nzfake import NZFakerField
+from utils.nazare import nz_load_fields, nz_pipeline_create, edge_load_datasources
+from utils.nzfake import NaFaker, NZFakerEdge, NZFakerField
 from utils.utils import download_s3file, encode
 
 
@@ -89,14 +89,6 @@ if __name__ == "__main__":
     )
 
     # File
-    parser.add_argument("--nz-schema-file", help="Schema file", required=True)
-    parser.add_argument(
-        "--nz-schema-file-type",
-        help="Nazare Schema file type",
-        choices=["csv", "json", "jsonl", "bson"],
-        default="json",
-    )
-
     parser.add_argument(
         "--s3-endpoint",
         help="S3 url",
@@ -109,7 +101,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-type",
         help="Output message type",
-        choices=["csv", "json", "bson"],
+        choices=["csv", "json", "bson", "txt", "edge"],
         default="json",
     )
     parser.add_argument(
@@ -145,6 +137,19 @@ if __name__ == "__main__":
     )
 
     # NZStore REST API
+    parser.add_argument(
+        "--nz-create-pipeline",
+        help="Create Nazare pipeline",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--nz-schema-file", help="Nazare Schema file")
+    parser.add_argument(
+        "--nz-schema-file-type",
+        help="Nazare Schema file type",
+        choices=["csv", "json", "jsonl", "bson"],
+        default="json",
+    )
     parser.add_argument(
         "--nz-api-url",
         help="Store API URL",
@@ -189,22 +194,51 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    schema_file = args.nz_schema_file
-    if schema_file.startswith("s3a://"):
-        schema_file = download_s3file(
-            schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
-        )
-    fields: list[Field] = nz_load_fields(schema_file, args.nz_schema_file_type)
+    schema_file = None
+    if args.nz_schema_file and args.nz_schema_file_type:
+        schema_file = args.nz_schema_file
+        if schema_file.startswith("s3a://"):
+            schema_file = download_s3file(
+                schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
+            )
 
-    if args.nz_api_url and args.nz_api_username and args.nz_api_password:
+    if args.nz_create_pipeline:
+        if not schema_file:
+            raise RuntimeError(
+                "Please provide both --nz-schema-file and --nz-schema-file-type to create pipeline that requires schema file"
+            )
+
+        if not args.nz_api_url or not args.nz_api_username or not args.nz_api_password:
+            raise RuntimeError("Nazare API credentials are required")
+
         nz_pipeline_create(
             args.nz_api_url,
             args.nz_api_username,
             args.nz_api_password,
-            args.mqtt_topic,
-            fields,
-            args.pipeline_deltasync_enabled,
-            args.pipeline_retention,
+            args.kafka_topic,
+            args.nz_schema_file_type,
+            schema_file,
+            "EDGE" if args.output_type == "edge" else "KAFKA",
+            args.nz_pipeline_deltasync_enabled,
+            args.nz_pipeline_retention,
+        )
+
+    faker: NaFaker = None
+    if args.output_type == "edge":
+        if not schema_file:
+            raise RuntimeError(
+                "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
+            )
+        faker: NZFakerEdge = NZFakerEdge(
+            edge_load_datasources(schema_file, args.nz_schema_file_type),
+        )
+    else:
+        faker: NaFaker = NZFakerField(
+            nz_load_fields(schema_file, args.nz_schema_file_type),
+            args.fake_string_length,
+            args.fake_string_cardinality,
+            args.fake_binary_length,
+            ZoneInfo(args.fake_timestamp_tzinfo),
         )
 
     custom_row = {}
@@ -241,20 +275,13 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _signal_handler)
     atexit.register(_cleanup, mqttc=mqttc)
 
-    fake = NZFakerField(
-        fields,
-        args.fake_string_length,
-        args.fake_string_cardinality,
-        args.fake_binary_length,
-        ZoneInfo(args.fake_timestamp_tzinfo),
-    )
-
     while True:
         elapsed = 0
         start_time = datetime.now(timezone.utc)
         for _ in range(args.rate):
             ts = start_time + timedelta(seconds=elapsed)
-            row = fake.values() | custom_row
+
+            row = faker.values() | custom_row
 
             if args.date_enabled:
                 if "date" in row:
@@ -266,9 +293,10 @@ if __name__ == "__main__":
                 row = {"timestamp": int(ts.timestamp() * 1e6)} | row
 
             try:
+                values = encode(row, args.output_type)
                 ret = mqttc.publish(
                     topic=args.mqtt_topic,
-                    payload=encode(row, args.output_type),
+                    payload=values,
                     qos=args.mqtt_qos,
                 )
                 ret.wait_for_publish()
@@ -276,7 +304,7 @@ if __name__ == "__main__":
                     "Published mid: %s, return code: %s, row: %s",
                     ret.mid,
                     ret.rc,
-                    row,
+                    values,
                 )
             except RuntimeError as e:
                 logging.error("MQTT publishing error: %s", e)

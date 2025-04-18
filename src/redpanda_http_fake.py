@@ -15,8 +15,8 @@ from zoneinfo import ZoneInfo
 import requests
 import urllib3
 
-from utils.nazare import Field, nz_load_fields, nz_pipeline_create
-from utils.nzfake import NZFakerField
+from utils.nazare import edge_load_datasources, nz_load_fields, nz_pipeline_create
+from utils.nzfake import NaFaker, NZFakerEdge, NZFakerField
 from utils.utils import download_s3file, encode
 
 
@@ -76,13 +76,6 @@ if __name__ == "__main__":
     )
 
     # File
-    parser.add_argument("--nz-schema-file", help="Schema file", required=True)
-    parser.add_argument(
-        "--nz-schema-file-type",
-        help="Schema file type",
-        choices=["csv", "jsonl", "bsonl"],
-        default="json",
-    )
     parser.add_argument(
         "--s3-endpoint",
         help="S3 url",
@@ -95,7 +88,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-type",
         help="Output message type",
-        choices=["csv", "json", "bson"],
+        choices=["csv", "json", "bson", "txt", "edge"],
         default="json",
     )
     parser.add_argument(
@@ -131,6 +124,19 @@ if __name__ == "__main__":
     )
 
     # NZStore REST API
+    parser.add_argument(
+        "--nz-create-pipeline",
+        help="Create Nazare pipeline",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--nz-schema-file", help="Nazare Schema file")
+    parser.add_argument(
+        "--nz-schema-file-type",
+        help="Nazare Schema file type",
+        choices=["csv", "json", "jsonl", "bson"],
+        default="json",
+    )
     parser.add_argument(
         "--nz-api-url",
         help="Store API URL",
@@ -175,23 +181,51 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
-    schema_file = args.nz_schema_file
-    if schema_file.startswith("s3a://"):
-        schema_file = download_s3file(
-            schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
-        )
-    fields: list[Field] = nz_load_fields(schema_file, args.nz_schema_file_type)
+    schema_file = None
+    if args.nz_schema_file and args.nz_schema_file_type:
+        schema_file = args.nz_schema_file
+        if schema_file.startswith("s3a://"):
+            schema_file = download_s3file(
+                schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
+            )
 
-    if args.nz_api_url and args.nz_api_username and args.nz_api_password:
+    if args.nz_create_pipeline:
+        if not schema_file:
+            raise RuntimeError(
+                "Please provide both --nz-schema-file and --nz-schema-file-type to create pipeline that requires schema file"
+            )
+
+        if not args.nz_api_url or not args.nz_api_username or not args.nz_api_password:
+            raise RuntimeError("Nazare API credentials are required")
+
         nz_pipeline_create(
             args.nz_api_url,
             args.nz_api_username,
             args.nz_api_password,
             args.kafka_topic,
-            fields,
-            args.pipeline_deltasync_enabled,
-            args.pipeline_retention,
-            logger=logging,
+            args.nz_schema_file_type,
+            schema_file,
+            "EDGE" if args.output_type == "edge" else "KAFKA",
+            args.nz_pipeline_deltasync_enabled,
+            args.nz_pipeline_retention,
+        )
+
+    faker: NaFaker = None
+    if args.output_type == "edge":
+        if not schema_file:
+            raise RuntimeError(
+                "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
+            )
+        faker: NZFakerEdge = NZFakerEdge(
+            edge_load_datasources(schema_file, args.nz_schema_file_type),
+        )
+    else:
+        faker: NaFaker = NZFakerField(
+            nz_load_fields(schema_file, args.nz_schema_file_type),
+            args.fake_string_length,
+            args.fake_string_cardinality,
+            args.fake_binary_length,
+            ZoneInfo(args.fake_timestamp_tzinfo),
         )
 
     custom_row = {}
@@ -200,14 +234,6 @@ if __name__ == "__main__":
         custom_row[key] = val
 
     interval = args.interval
-
-    fake = NZFakerField(
-        fields,
-        args.fake_string_length,
-        args.fake_string_cardinality,
-        args.fake_binary_length,
-        ZoneInfo(args.fake_timestamp_tzinfo),
-    )
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     scheme = "https" if args.redpanda_ssl else "http"
@@ -222,7 +248,8 @@ if __name__ == "__main__":
         start_time = datetime.now(timezone.utc)
         for _ in range(args.rate):
             ts = start_time + timedelta(seconds=elapsed)
-            row = fake.values() | custom_row
+
+            row = faker.values() | custom_row
 
             if args.date_enabled:
                 if "date" in row:
@@ -233,12 +260,14 @@ if __name__ == "__main__":
                     del row["timestamp"]
                 row = {"timestamp": int(ts.timestamp() * 1e6)} | row
 
+            values = encode(row, args.output_type)
+
             if args.kafka_key is None:
-                record = dict(value=row, partition=args.kafka_partition)
+                record = dict(value=values, partition=args.kafka_partition)
             else:
                 record = dict(
                     key=args.kafka_key.encode("utf-8"),
-                    value=row,
+                    value=values,
                     partition=args.kafka_partition,
                 )
             records.append(record)
