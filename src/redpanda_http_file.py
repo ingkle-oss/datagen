@@ -189,6 +189,12 @@ if __name__ == "__main__":
         type=int,
         default=1,
     )
+    parser.add_argument(
+        "--report-interval",
+        help="Delivery report interval",
+        type=int,
+        default=10,
+    )
 
     # Record interval
     parser.add_argument(
@@ -345,10 +351,11 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _signal_handler)
     atexit.register(_cleanup)
 
+    elapsed = 0
+    report_count = 0
+    records = []
     with LoadRows(filepath, args.input_type) as rows:
         while True:
-            elapsed = 0
-            records = []
             start_time = datetime.now(timezone.utc)
             for _ in range(args.rate):
                 ts = start_time + timedelta(seconds=elapsed)
@@ -385,14 +392,13 @@ if __name__ == "__main__":
 
                 elapsed += interval if interval > 0 else 0
 
-            val = encode({"records": records}, args.output_type)
             res = requests.post(
                 url=(
                     f"{scheme}://{args.redpanda_host}:{args.redpanda_port}"
                     f"/topics/{args.kafka_topic}"
                 ),
                 auth=(args.kafka_sasl_username, args.kafka_sasl_password),
-                data=val,
+                data=encode({"records": records}, args.output_type),
                 headers={
                     "Content-Type": "application/vnd.kafka.json.v2+json",
                     "content-encoding": "gzip",
@@ -400,19 +406,19 @@ if __name__ == "__main__":
                 verify=args.redpanda_verify,
             )
             res.raise_for_status()
-            logging.debug(
-                "%s, %s",
-                val,
-                args.output_type,
-            )
-            logging.info(
-                "Total %s messages delivered: %s",
-                len(records),
-                json.dumps(res.json(), indent=2),
-            )
+            records = []
+
+            report_count += 1
+            if report_count >= args.report_interval:
+                logging.info(
+                    "Message posted: count=%s, len=%s, response=%s",
+                    report_count,
+                    len(records),
+                    json.dumps(res.json()),
+                )
+                report_count = 0
 
             wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
             wait = 0.0 if wait < 0 else wait
+            elapsed = 0
             time.sleep(wait)
-
-        logging.info("Finished")

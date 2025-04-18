@@ -130,6 +130,12 @@ if __name__ == "__main__":
         type=int,
         default=1,
     )
+    parser.add_argument(
+        "--report-interval",
+        help="Delivery report interval",
+        type=int,
+        default=10,
+    )
 
     # Record interval
     parser.add_argument(
@@ -244,8 +250,6 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         custom_row[key] = val
 
-    interval = args.interval
-
     mqttc = mqtt.Client(
         client_id=args.mqtt_client_id,
         userdata=args,
@@ -273,8 +277,9 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _signal_handler)
     atexit.register(_cleanup, mqttc=mqttc)
 
+    elapsed = 0
+    report_count = 0
     while True:
-        elapsed = 0
         start_time = datetime.now(timezone.utc)
         for _ in range(args.rate):
             ts = start_time + timedelta(seconds=elapsed)
@@ -307,8 +312,20 @@ if __name__ == "__main__":
             except RuntimeError as e:
                 logging.error("MQTT publishing error: %s", e)
 
-            elapsed += interval
+            report_count += 1
+            if report_count >= args.report_interval:
+                logging.info(
+                    "Message published: mid=%s, rc=%s, count=%s",
+                    ret.mid,
+                    ret.rc,
+                    report_count,
+                )
+                logging.debug("Message: %s", values)
+                report_count = 0
+
+            elapsed += args.interval
 
         wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
         wait = 0.0 if wait < 0 else wait
+        elapsed = 0
         time.sleep(wait)

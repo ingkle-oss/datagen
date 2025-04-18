@@ -43,9 +43,10 @@ def delivery_report(err, msg):
 
     global REPORT_COUNT
 
-    if REPORT_COUNT >= args.kafka_report_interval:
+    REPORT_COUNT += 1
+    if REPORT_COUNT >= args.report_interval:
         logging.info(
-            "Message delivered to error=%s topic=%s partition=%s offset=%s latency=%s, count=%s",
+            "Message delivered to error=%s topic=%s partition=%s offset=%s latency=%0.6f, count=%s",
             msg.error(),
             msg.topic(),
             msg.partition(),
@@ -55,7 +56,6 @@ def delivery_report(err, msg):
         )
         logging.debug("Message (%s): %s", msg.key(), msg.value())
         REPORT_COUNT = 0
-    REPORT_COUNT += 1
 
 
 if __name__ == "__main__":
@@ -121,12 +121,7 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=True,
     )
-    parser.add_argument(
-        "--kafka-report-interval",
-        help="Kafka delivery report interval",
-        type=int,
-        default=10,
-    )
+
     # Kafka others
     parser.add_argument("--kafka-topic", help="Kafka topic name", required=True)
     parser.add_argument(
@@ -175,6 +170,12 @@ if __name__ == "__main__":
         help="Number of records for each loop",
         type=int,
         default=1,
+    )
+    parser.add_argument(
+        "--report-interval",
+        help="Delivery report interval",
+        type=int,
+        default=10,
     )
 
     # Record interval
@@ -290,7 +291,6 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         custom_row[key] = val
 
-    interval = args.interval
     # https://docs.confluent.io/platform/current/installation/configuration/producer-configs.html
     # https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md
     configs = {
@@ -332,8 +332,8 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _signal_handler)
     atexit.register(_cleanup, producer=producer)
 
+    elapsed = 0
     while True:
-        elapsed = 0
         start_time = datetime.now(timezone.utc)
         for _ in range(args.rate):
             ts = start_time + timedelta(seconds=elapsed)
@@ -363,11 +363,12 @@ if __name__ == "__main__":
             except KafkaException as e:
                 logging.error("Kafka producing error: %s", e)
 
-            elapsed += interval
+            elapsed += args.interval
 
         if args.kafka_flush:
             producer.flush()
 
         wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
         wait = 0.0 if wait < 0 else wait
+        elapsed = 0
         time.sleep(wait)

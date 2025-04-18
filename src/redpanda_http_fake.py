@@ -117,6 +117,12 @@ if __name__ == "__main__":
         type=int,
         default=1,
     )
+    parser.add_argument(
+        "--report-interval",
+        help="Delivery report interval",
+        type=int,
+        default=10,
+    )
 
     # Record interval
     parser.add_argument(
@@ -231,8 +237,6 @@ if __name__ == "__main__":
         key, val = kv.split("=")
         custom_row[key] = val
 
-    interval = args.interval
-
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     scheme = "https" if args.redpanda_ssl else "http"
 
@@ -240,9 +244,10 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _signal_handler)
     atexit.register(_cleanup)
 
+    elapsed = 0
+    report_count = 0
+    records = []
     while True:
-        elapsed = 0
-        records = []
         start_time = datetime.now(timezone.utc)
         for _ in range(args.rate):
             ts = start_time + timedelta(seconds=elapsed)
@@ -269,7 +274,8 @@ if __name__ == "__main__":
                     partition=args.kafka_partition,
                 )
             records.append(record)
-            elapsed += interval
+
+            elapsed += args.interval
 
         res = requests.post(
             url=(
@@ -285,15 +291,19 @@ if __name__ == "__main__":
             verify=args.redpanda_verify,
         )
         res.raise_for_status()
-        logging.debug("Posted: %s, %s", records, args.output_type)
-        logging.info(
-            "Total %s messages delivered: %s",
-            len(records),
-            json.dumps(res.json(), indent=2),
-        )
+        records = []
+
+        report_count += 1
+        if report_count >= args.report_interval:
+            logging.info(
+                "Message posted: count=%s, len=%s, response=%s",
+                report_count,
+                len(records),
+                json.dumps(res.json()),
+            )
+            report_count = 0
 
         wait = elapsed - (datetime.now(timezone.utc) - start_time).total_seconds()
         wait = 0.0 if wait < 0 else wait
+        elapsed = 0
         time.sleep(wait)
-
-    logging.info("Finished")
