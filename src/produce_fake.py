@@ -182,7 +182,7 @@ if __name__ == "__main__":
         "--interval", help="Record interval in seconds", type=float, default=1.0
     )
 
-    # NZStore REST API
+    # Nazare Specific Options
     parser.add_argument(
         "--nz-create-pipeline",
         help="Create Nazare pipeline",

@@ -139,13 +139,6 @@ if __name__ == "__main__":
     parser.add_argument("--kafka-key", help="Kafka partition key")
 
     # File
-    parser.add_argument("--input-filepath", help="file to be produced", required=True)
-    parser.add_argument(
-        "--input-type",
-        help="Input file type",
-        choices=["csv", "json", "jsonl", "bson", "parquet"],
-        default="json",
-    )
     parser.add_argument(
         "--s3-endpoint",
         help="S3 url",
@@ -153,6 +146,13 @@ if __name__ == "__main__":
     )
     parser.add_argument("--s3-accesskey", help="S3 accesskey")
     parser.add_argument("--s3-secretkey", help="S3 secretkey")
+    parser.add_argument("--input-filepath", help="file to be produced", required=True)
+    parser.add_argument(
+        "--input-type",
+        help="Input file type",
+        choices=["csv", "json", "jsonl", "bson", "parquet"],
+        default="json",
+    )
 
     # Output
     parser.add_argument(

@@ -123,7 +123,7 @@ if __name__ == "__main__":
         "--interval", help="Record interval in seconds", type=float, default=1.0
     )
 
-    # NZStore REST API
+    # Nazare Specific Options
     parser.add_argument(
         "--nz-create-pipeline",
         help="Create Nazare pipeline",
@@ -139,18 +139,16 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--nz-api-url",
-        help="Store API URL",
+        help="Nazare Store API URL",
         default="http://nzstore.nzstore.svc.cluster.local:8000/api/v1/pipelines",
     )
-    parser.add_argument("--nz-api-username", help="Store API username")
-    parser.add_argument("--nz-api-password", help="Store API password")
-
-    # NZStore pipeline
+    parser.add_argument("--nz-api-username", help="Nazare Store API username")
+    parser.add_argument("--nz-api-password", help="Nazare Store API password")
     parser.add_argument(
-        "--pipeline-retention", help="Retention (e.g. 60,d)", default=""
+        "--nz-pipeline-retention", help="Retention (e.g. 60,d)", default=""
     )
     parser.add_argument(
-        "--pipeline-deltasync-enabled",
+        "--nz-pipeline-deltasync-enabled",
         help="Enable deltasync",
         action=argparse.BooleanOptionalAction,
         default=False,
