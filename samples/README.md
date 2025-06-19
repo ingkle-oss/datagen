@@ -27,7 +27,7 @@ python3 src/produce_file.py \
 --kafka-sasl-username KAFKA_USERNAME \
 --kafka-sasl-password KAFKA_PASSWORD \
 --kafka-topic test-topic \
---kafka-report-interval 1 \
+--report-interval 1 \
 --input-filepath samples/kamp/ingkle_an2_demo_battery_tester01.csv \
 --input-type csv \
 --unique-alt-field SerialNumber \
@@ -41,7 +41,7 @@ python3 src/produce_file.py \
 --kafka-sasl-username KAFKA_USERNAME \
 --kafka-sasl-password KAFKA_PASSWORD \
 --kafka-topic test-topic \
---kafka-report-interval 1 \
+--report-interval 1 \
 --input-filepath samples/kamp/ingkle_an2_demo_injection_moulder01.csv \
 --input-type csv \
 --interval-field Machine_Cycle_Time \
@@ -83,7 +83,7 @@ python3 src/produce_file.py \
 --kafka-sasl-username KAFKA_USERNAME \
 --kafka-sasl-password KAFKA_PASSWORD \
 --kafka-topic test-topic \
---kafka-report-interval 1 \
+--report-interval 1 \
 --input-filepath samples/kamp/ingkle_an2_demo_molding01.csv \
 --input-type csv \
 --interval-field Cycle_Time \
@@ -98,7 +98,7 @@ python3 src/produce_file.py \
 --kafka-sasl-username KAFKA_USERNAME \
 --kafka-sasl-password KAFKA_PASSWORD \
 --kafka-topic test-topic \
---kafka-report-interval 1 \
+--report-interval 1 \
 --input-filepath samples/kamp/ingkle_an2_demo_press01.csv \
 --input-type csv \
 --rate 1
@@ -111,7 +111,7 @@ python3 src/produce_file.py \
 --kafka-sasl-username KAFKA_USERNAME \
 --kafka-sasl-password KAFKA_PASSWORD \
 --kafka-topic test-topic \
---kafka-report-interval 1 \
+--report-interval 1 \
 --input-filepath samples/kamp/ingkle_an2_demo_qt_heater01.csv \
 --input-type csv \
 --unique-alt-field process_num \
@@ -126,7 +126,7 @@ python3 src/produce_file.py \
 --kafka-sasl-username KAFKA_USERNAME \
 --kafka-sasl-password KAFKA_PASSWORD \
 --kafka-topic test-topic \
---kafka-report-interval 1 \
+--report-interval 1 \
 --input-filepath samples/other/ingkle_an2_demo_mct01.csv \
 --input-type csv \
 --rate 5
@@ -139,7 +139,7 @@ python3 src/produce_file.py \
 --kafka-sasl-username KAFKA_USERNAME \
 --kafka-sasl-password KAFKA_PASSWORD \
 --kafka-topic test-topic \
---kafka-report-interval 1 \
+--report-interval 1 \
 --input-filepath samples/kamp/ingkle_an2_demo_mct02.csv \
 --input-type csv \
 --rate 10
@@ -151,7 +151,7 @@ python3 src/produce_file.py \
 --kafka-sasl-username KAFKA_USERNAME \
 --kafka-sasl-password KAFKA_PASSWORD \
 --kafka-topic test-topic \
---kafka-report-interval 1 \
+--report-interval 1 \
 --input-filepath samples/kamp/ingkle_an2_demo_press_cushion01.csv \
 --input-type csv \
 --rate 50

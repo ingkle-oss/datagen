@@ -19,29 +19,31 @@ Run Kafka producer
 ```bash
 # Produce fake data
 python3 src/produce_fake.py \
---kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --kafka-report-interval 1 \
---nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
+--kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD \
+--kafka-topic test-kafka-topic \
+--nz-schema-file samples/test/schema/fake.csv --nz-schema-file-type csv \
+--report-interval 1 \
 --output-type json
 
 # Post fake data to pandas http
 python3 src/pandas_http_fake.py \
 --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic \
---nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
+--nz-schema-file samples/test/schema/fake.csv --nz-schema-file-type csv \
 --output-type json
 
 # Produce a file
 python3 src/produce_file.py \
 --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD \
 --kafka-topic fake_test \
---input-filepath samples/fake.jsonl --input-type jsonl --output-type json \
---kafka-report-interval 1 \
+--input-filepath samples/test/schema/fake.jsonl --input-type jsonl --output-type json \
+--report-interval 1 \
 --loglevel DEBUG
 
 # Post a file to pandas http
 python3 src/pandas_http_file.py \
 --host PANDAS_PROXY_HOST --port PANDAS_PROXY_PORT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --ssl --kafka-topic test-kafka-topic \
---nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
---input-filepath samples/fake.json --input-type json --output-type json
+--nz-schema-file samples/test/schema/fake.csv --nz-schema-file-type csv \
+--input-filepath samples/test/schema/fake.json --input-type json --output-type json
 ```
 
 Consumer Kafka data
@@ -58,13 +60,13 @@ Run MQTT publisher
 ```bash
 # Publish fake data
 python3 src/publish_fake.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure \
---nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
+--nz-schema-file samples/test/schema/fake.csv --nz-schema-file-type csv \
 --output-type json
 
 # Publish a file
 python3 src/publish_file.py --mqtt-host MQTT_HOST --mqtt-port MQTT_PORT --mqtt-username MQTT_USERNAME --mqtt-password MQTT_PASSWORD  --mqtt-kafka-topic MQTT_TOPIC --mqtt-tls --mqtt-tls-insecure \
---nz-schema-file samples/fake.schema.csv --nz-schema-file-type csv \
---input-filepath samples/fake.json --input-type json --output-type json
+--nz-schema-file samples/test/schema/fake.csv --nz-schema-file-type csv \
+--input-filepath samples/test/schema/fake.json --input-type json --output-type json
 ```
 
 Create, Delete a Nazare pipeline
@@ -86,7 +88,7 @@ python3 src/nazare_pipeline_delete.py \
 
 ```bash
 # Produce fake data
-docker run --rm -it ingkle/datagen python3 produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1  --kafka-report-interval 1
+docker run --rm -it ingkle/datagen python3 produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1  --report-interval 1
 ```
 
 ## Run on K8s
