@@ -264,15 +264,23 @@ def _edge_encode(spec: EdgeDataSpec, row: dict) -> list[int]:
             or spec.format.endswith("p")
         ):
             try:
-                value = str(value).encode("utf-8")
+                # 문자열을 바이트로 변환
+                if isinstance(value, str):
+                    # 빈 문자열이면 Null로 처리
+                    if value == "":
+                        return [0]
+                    value = value.encode("utf-8")
+                else:
+                    value = str(value).encode("utf-8")
             except UnicodeEncodeError:
                 logging.error(
-                    "Encoding error, spec_id: %s, format: %s, value: %s",
+                    "Encoding error, treating as null, spec_id: %s, format: %s, value: %s",
                     spec.edgeDataSpecId,
                     spec.format,
                     value,
                 )
-                value = ""
+                # 인코딩 오류 시에도 Null로 처리
+                return [0]
 
         values.append(value)
 
