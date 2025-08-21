@@ -1,0 +1,17 @@
+name: Build datastat
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - dev_v[0-9]+.[0-9]+.[0-9]+ # 이 부분을 커스텀
+jobs:
+  all:
+    uses: ./.github/workflows/dockerfiles_dev.yaml
+    with:
+      image: ingkle/datagen
+      path: ./
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
