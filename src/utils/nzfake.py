@@ -39,12 +39,14 @@ def _gen_struct_to_value(format: str, size: int):
     elif format == "d":
         value = random.uniform(-(2**63), (2**63) - 1)
     elif format.endswith("s") or format.endswith("p"):
-        str_length = size
+        # 문자열 길이를 size에서 추출 (예: "64s" -> 64)
+        str_length = int(format[:-1]) if format[:-1].isdigit() else size
+        # 최소 1자 이상의 문자열 생성
+        actual_length = max(1, min(str_length, 20))  # 최대 20자로 제한
         value = "".join(
             random.choice(string.ascii_letters + string.digits)
-            for _ in range(str_length)
+            for _ in range(actual_length)
         ).encode("utf-8")
-
     else:
         raise ValueError(f"Unknown field type: {format}")
 
