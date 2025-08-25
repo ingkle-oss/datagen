@@ -33,7 +33,7 @@ STRUCT_FMT = {
     "Q": int,
     "f": float,
     "d": float,
-    "s": str,
+    "s": lambda x: x.encode('utf-8') if isinstance(x, str) else (x if isinstance(x, bytes) else str(x).encode('utf-8')),
     "p": str,
 }
 
@@ -255,32 +255,49 @@ def _edge_encode(spec: EdgeDataSpec, row: dict) -> list[int]:
     else:
         value = row.get(spec.edgeDataSpecId, None)
         if value is None:
+            # 문자열 필드에 대해서는 빈 bytes 반환
+            if (
+                spec.format.endswith("c")
+                or spec.format.endswith("s")
+                or spec.format.endswith("p")
+            ):
+                # 포맷에서 길이 추출 (예: "8s" -> 8)
+                import re
+                match = re.match(r'(\d+)', spec.format)
+                if match:
+                    length = int(match.group(1))
+                    return [b'\x00' * length]  # null bytes로 채움
+                else:
+                    return [b'\x00']  # 기본값
             return [0]
 
+        # STRUCT_FMT를 사용하여 값 변환 (이미 bytes 변환 포함)
         value = STRUCT_FMT.get(spec.format[-1:], float)(value)
+        
+        # 빈 문자열 처리
         if (
             spec.format.endswith("c")
             or spec.format.endswith("s")
             or spec.format.endswith("p")
         ):
-            try:
-                # 문자열을 바이트로 변환
-                if isinstance(value, str):
-                    # 빈 문자열이면 Null로 처리
-                    if value == "":
-                        return [0]
-                    value = value.encode("utf-8")
+            if isinstance(value, str) and value == "":
+                # 빈 문자열도 포맷에 맞는 길이의 null bytes로 처리
+                import re
+                match = re.match(r'(\d+)', spec.format)
+                if match:
+                    length = int(match.group(1))
+                    return [b'\x00' * length]
                 else:
-                    value = str(value).encode("utf-8")
-            except UnicodeEncodeError:
-                logging.error(
-                    "Encoding error, treating as null, spec_id: %s, format: %s, value: %s",
-                    spec.edgeDataSpecId,
-                    spec.format,
-                    value,
-                )
-                # 인코딩 오류 시에도 Null로 처리
-                return [0]
+                    return [b'\x00']
+            elif isinstance(value, bytes) and len(value) == 0:
+                # 빈 bytes도 포맷에 맞는 길이의 null bytes로 처리
+                import re
+                match = re.match(r'(\d+)', spec.format)
+                if match:
+                    length = int(match.group(1))
+                    return [b'\x00' * length]
+                else:
+                    return [b'\x00']
 
         values.append(value)
 

@@ -189,7 +189,8 @@ class LoadRows(object):
         return self
 
     def __exit__(self, type, value, trace_back):
-        self.fo.close()
+        if hasattr(self, 'fo') and self.fo is not None:
+            self.fo.close()
 
     def rewind(self):
         if self.filetype == "bson":

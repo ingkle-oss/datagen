@@ -27,6 +27,7 @@ confluent-kafka = "*"
 black = "*"
 flake8 = "*"
 ipython = "*"
+pytest = "*"
 
 [requires]
 python_version = "3.11"
