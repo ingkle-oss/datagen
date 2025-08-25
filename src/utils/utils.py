@@ -106,6 +106,8 @@ def csv_loads(value: str, headers: list[str]) -> dict:
         elif check_float(v):
             vals.append(float(v))
         else:
+            # 따옴표 제거
+            v = v.strip('"')
             vals.append(v)
 
     return {k: v for k, v in dict(zip(headers, vals)).items() if v is not None}
@@ -184,7 +186,9 @@ class LoadRows(object):
             else:
                 self.json_iter = iter([self.json_obj])
         elif self.filetype == "csv":
-            self.headers = self.fo.readline().strip().split(",")
+            # CSV 헤더에서 따옴표 제거
+            headers_line = self.fo.readline().strip()
+            self.headers = [h.strip('"') for h in headers_line.split(",")]
 
         return self
 
