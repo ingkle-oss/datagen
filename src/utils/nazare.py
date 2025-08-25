@@ -336,44 +336,19 @@ def _edge_decode(
             value = value + (1 << 32)
         elif spec.format == "q":
             value = value + (1 << 64)
-        elif (
-            spec.format != "B"
-            and spec.format != "H"
-            and spec.format != "I"
-            and spec.format != "L"
-            and spec.format != "Q"
-        ):
-            logger.error(
-                "Unsupported format for bits, send it to triage, spec_id: %s, format: %s, value: %s",
-                spec.edgeDataSpecId,
-                spec.format,
-                value,
-            )
-            return {TRIAGE_PREFIX + spec.edgeDataSpecId: value}
 
         for bit in spec.bits:
             if bit:
-                values[spec.edgeDataSpecId + "@" + bit] = bool(value & 0b1)
-            value = value >> 1
+                values[spec.edgeDataSpecId + "@" + str(bit)] = (value >> (bit - 1)) & 1
     else:
-        if (
-            spec.format.endswith("c")
-            or spec.format.endswith("s")
-            or spec.format.endswith("p")
-        ):
-            try:
-                values[spec.edgeDataSpecId] = STRUCT_FMT.get(spec.format[-1:], float)(
-                    value.decode("utf-8")
-                )
-            except UnicodeDecodeError:
-                logger.error(
-                    "Decoding error, send it to triage, spec_id: %s, format: %s, value: %s",
-                    spec.edgeDataSpecId,
-                    spec.format,
-                    value,
-                )
-                return {TRIAGE_PREFIX + spec.edgeDataSpecId: value}
+        # 문자열 필드 처리 수정
+        if spec.format.endswith("s"):
+            # bytes를 문자열로 변환하고 null bytes 제거
+            if isinstance(value, bytes):
+                value = value.decode("utf-8").rstrip('\x00')
+            values[spec.edgeDataSpecId] = value
         else:
+            # 기존 로직 유지 (숫자 필드)
             values[spec.edgeDataSpecId] = STRUCT_FMT.get(spec.format[-1:], float)(value)
 
     return values
