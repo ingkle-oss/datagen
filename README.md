@@ -88,7 +88,7 @@ python3 src/nazare_pipeline_delete.py \
 
 ```bash
 # Produce fake data
-docker run --rm -it ingkle/datagen python3 produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1  --report-interval 1
+docker run --rm -it bluezery/datagen python3 produce_fake.py --kafka-bootstrap-servers BOOTSTRAP_SERVER --kafka-security-protocol SASL_PLAINTEXT --kafka-sasl-username USERNAME --kafka-sasl-password PASSWORD --kafka-topic test-kafka-topic --rate 1  --report-interval 1
 ```
 
 ## Run on K8s
@@ -108,11 +108,11 @@ docker buildx create --name multi-builder --driver docker-container --bootstrap
 Build and load
 
 ```bash
-docker buildx build -t ingkle/datagen:test --platform linux/arm64 --load .
+docker buildx build -t bluezery/datagen:test --platform linux/arm64 --load .
 ```
 
 Build and push
 
 ```bash
-docker buildx build -t ingkle/datagen:test --platform linux/amd64,linux/arm64 --push .
+docker buildx build -t bluezery/datagen:test --platform linux/amd64,linux/arm64 --push .
 ```
