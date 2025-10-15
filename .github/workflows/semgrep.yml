@@ -5,7 +5,7 @@ name: Semgrep
 on:
   # Scan changed files in PRs (diff-aware scanning):
   pull_request:
-    
+
   # Scan on-demand through GitHub Actions interface:
   workflow_dispatch: {}
   # Scan mainline branches if there are changes to .github/workflows/semgrep.yml:
@@ -15,6 +15,7 @@ on:
       - master
     paths:
       - .github/workflows/semgrep.yml
+  workflow_dispatch:
   # Schedule the CI job (this method uses cron syntax):
   schedule:
     - cron: '20 17 * * 2' # Sets Semgrep to scan every day at 17:20 UTC.
