@@ -1,4 +1,6 @@
 name: Build anything
+permissions:
+  contents: read
 
 on:
   workflow_call:
