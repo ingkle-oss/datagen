@@ -1,12 +1,15 @@
 FROM python:3.11
 
-ENV APPNAME datagen
+ARG APPNAME=datagen
 
-COPY requirements.txt /opt/${APPNAME}/requirements.txt
-RUN pip3 install -r /opt/${APPNAME}/requirements.txt
+COPY --from=ghcr.io/astral-sh/uv:0.8.11 /uv /uvx /bin/
 
-COPY src /opt/${APPNAME}/
+ADD ./pyproject.toml /app/${APPNAME}/pyproject.toml
+ADD ./uv.lock /app/${APPNAME}/uv.lock
+ADD ./src /app/${APPNAME}/src
+ADD ./samples /app/samples
 
-WORKDIR /opt/${APPNAME}/
+WORKDIR /app/${APPNAME}
+RUN uv sync --locked
 
-CMD ["python3"]
+CMD ["uv", "run"]

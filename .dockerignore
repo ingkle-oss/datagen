@@ -4,7 +4,6 @@
 **/.git
 **/.gitignore
 **/.dockerignore
-**/.envrc
 **/.flake8
 **/.prettierrc.json
 **/tox.ini
@@ -14,8 +13,6 @@
 **/.java-version
 **/.data
 **/.Rhistory
-**/Pipfile
-**/Pipfile.lock
 **/__pycache__
 **/.pyc
 **/dockerfile

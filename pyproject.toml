@@ -1,0 +1,35 @@
+[project]
+name = "datagen"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.40.48",
+    "confluent-kafka>=2.11.1",
+    "faker>=37.11.0",
+    "fastnumbers>=5.1.1",
+    "fsspec>=2025.9.0",
+    "orjson>=3.11.3",
+    "paho-mqtt>=2.1.0",
+    "pandas>=2.3.3",
+    "psycopg>=3.2.10",
+    "psycopg2-binary>=2.9.11",
+    "pyarrow>=21.0.0",
+    "pydantic>=2.12.0",
+    "pymongo>=4.15.3",
+    "python-snappy>=0.7.3",
+    "requests>=2.32.5",
+    "s3fs>=0.4.2",
+    "sqlalchemy>=2.0.43",
+    "zstandard>=0.25.0",
+]
+
+[dependency-groups]
+dev = [
+    "black>=25.9.0",
+    "ipython>=9.6.0",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.0",
+]
