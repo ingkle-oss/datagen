@@ -3,10 +3,10 @@ name = "datagen"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
-    "boto3>=1.40.48",
-    "confluent-kafka>=2.11.1",
+    "boto3>=1.40.52",
+    "confluent-kafka>=2.12.0",
     "faker>=37.11.0",
     "fastnumbers>=5.1.1",
     "fsspec>=2025.9.0",
