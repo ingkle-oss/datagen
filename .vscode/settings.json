@@ -2,7 +2,7 @@
   "files.exclude": {
     "**/.classpath": true,
     "**/.git": true,
-    "**/.DS_Store": true,
+    "**/.DS_Store": true
   },
   "files.insertFinalNewline": true,
   "editor.formatOnSave": true,
@@ -11,11 +11,13 @@
   "editor.suggest.preview": true,
   "[python]": {
     "editor.defaultFormatter": "ms-python.black-formatter",
-    "editor.formatOnPaste": false
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
   },
-  "[yaml]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
+  "black-formatter.args": [
+    "--line-length=88"
+  ],
   "[json]": {
     "editor.defaultFormatter": "vscode.json-language-features"
   },
@@ -28,7 +30,13 @@
   "[typescriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "rust-analyzer.showUnlinkedFileNotification": false,
+  "[yaml]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[ansible]": {
+    "editor.autoIndent": "advanced",
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
   "terraform.experimentalFeatures.prefillRequiredFields": true,
   "terraform.experimentalFeatures.validateOnSave": true,
   "[terraform]": {
@@ -42,7 +50,11 @@
     "editor.formatOnSaveMode": "file"
   },
   "files.associations": {
-    "**/clusters/**/playbooks/**/*.yml": "ansible",
-    "**/clusters/**/playbooks/**/*.yaml": "ansible"
+    "**/inventories/*.yaml": "ansible",
+    "**/roles/*.yaml": "ansible"
   },
+  "sonarlint.connectedMode.project": {
+    "connectionId": "dataplatform-lab",
+    "projectKey": "dataplatform-lab_datagen"
+  }
 }
