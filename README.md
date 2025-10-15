@@ -1,3 +1,5 @@
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/50357a4321da4972a58d387c6c821eb1)](https://app.codacy.com/gh/dataplatform-lab/datagen/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+
 # Description
 
 Big Data Generator for testing
