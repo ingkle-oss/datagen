@@ -14,9 +14,10 @@ jobs:
         uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          uv sync
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
       - name: Analyzing the code with pylint
         run: |
-          uv run pylint $(git ls-files '*.py')
+          uv sync && uv run pylint $(git ls-files '*.py')
