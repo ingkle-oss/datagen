@@ -2,14 +2,27 @@ FROM python:3.11
 
 ARG APPNAME=datagen
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=ghcr.io/astral-sh/uv:0.8.11 /uv /uvx /bin/
 
-ADD ./pyproject.toml /app/${APPNAME}/pyproject.toml
-ADD ./uv.lock /app/${APPNAME}/uv.lock
-ADD ./src /app/${APPNAME}/src
-ADD ./samples /app/samples
+RUN groupadd -r appuser && useradd -r -m -g appuser appuser && \
+    mkdir -p /app/${APPNAME} && chown -R appuser:appuser /app/${APPNAME}
+USER appuser
+WORKDIR /app/${APPNAME}
+
+COPY ./uv.lock /app/${APPNAME}/uv.lock
+COPY ./pyproject.toml /app/${APPNAME}/pyproject.toml
+
+RUN uv sync --no-dev --no-editable --compile-bytecode --frozen --no-install-project
+
+COPY ./src /app/${APPNAME}/src
+COPY ./samples /app/samples
+
+RUN uv sync --no-dev --no-editable --compile-bytecode --frozen
 
 WORKDIR /app/${APPNAME}
-RUN uv sync --locked
 
-CMD ["uv", "run"]
+ENTRYPOINT [".venv/bin/python3"]
