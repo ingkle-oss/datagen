@@ -54,7 +54,7 @@ jobs:
             # mandatory
             -Dsonar.projectKey=dataplatform-lab_datagen
             -Dsonar.organization=dataplatform-lab
-            -Dsonar.sources=./src
+            -Dsonar.sources=src
             # Comma-separated paths to directories containing test source files.
             #-Dsonar.tests= # optional. For more info about Code Coverage, please refer to https://docs.sonarcloud.io/enriching/test-coverage/overview/
             # Adds more detail to both client and server-side analysis logs, activating DEBUG mode for the scanner, and adding client-side environment variables and system properties to the server-side log of analysis report processing.

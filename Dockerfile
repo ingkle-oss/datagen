@@ -3,7 +3,7 @@ FROM python:3.11-slim
 ARG APPNAME=datagen
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates && \
+    apt-get install -y --no-install-recommends ca-certificates curl librdkafka-dev && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:0.8.11 /uv /uvx /bin/
