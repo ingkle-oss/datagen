@@ -3,16 +3,14 @@
   // Extension identifier format: ${publisher}.${name}. Example: vscode.csharp
   // List of extensions which should be recommended for users of this workspace.
   "recommendations": [
-    "ms-python.python",
-    "ms-python.black-formatter",
-    "dbaeumer.vscode-eslint",
-    "charliermarsh.ruff",
     "esbenp.prettier-vscode",
-    "ms-python.vscode-pylance",
-    "SonarSource.sonarlint-vscode",
     "aaron-bond.better-comments",
     "github.vscode-github-actions",
-    "humao.rest-client"
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "ms-python.vscode-pylance",
+    "dbaeumer.vscode-eslint",
+    "SonarSource.sonarlint-vscode"
   ],
   // List of extensions recommended by VS Code that should not be recommended for users of this workspace.
   "unwantedRecommendations": []
