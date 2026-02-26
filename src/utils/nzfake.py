@@ -55,11 +55,11 @@ def _gen_datatype_values(
     type: str, str_cardinality: int, str_choice: list[str], str_length: int
 ):
     value = None
-    if type == "tinyint":
+    if type == "tinyint" or type == "byte":
         value = random.randint(-(2**7), (2**7) - 1)
     elif type == "boolean":
         value = random.choice([True, False])
-    elif type == "smallint":
+    elif type == "smallint" or type == "short":
         value = random.randint(-(2**15), (2**15) - 1)
     elif type == "int" or type == "integer":
         value = random.randint(-(2**31), (2**31) - 1)
@@ -67,7 +67,7 @@ def _gen_datatype_values(
         value = random.randint(-(2**63), (2**63) - 1)
     elif type == "float":
         value = random.uniform(-(2**31), (2**31) - 1)
-    elif type == "double":
+    elif type == "double" or type.startswith("decimal("):
         value = random.uniform(-(2**63), (2**63) - 1)
     elif type == "timestamp":
         value = int(
@@ -261,6 +261,7 @@ def field_model(tablename):
         subtype: Mapped[str] = mapped_column(String, nullable=True)
         nullable: Mapped[str] = mapped_column(Boolean, nullable=False)
         comment: Mapped[str] = mapped_column(String, nullable=True)
+        units: Mapped[str] = mapped_column(String, nullable=True)
 
         def __init__(
             self,
@@ -271,6 +272,7 @@ def field_model(tablename):
             subtype,
             nullable,
             comment,
+            units,
             created_at,
             updated_at,
         ):
@@ -281,6 +283,7 @@ def field_model(tablename):
             self.subtype = subtype
             self.nullable = nullable
             self.comment = comment
+            self.units = units
             self.created_at = created_at
             self.updated_at = updated_at
 
@@ -513,7 +516,13 @@ class NZFakerField:
 
         maps = {
             "integer": self.integers,
+            "int": self.integers,
+            "short": self.integers,
+            "smallint": self.integers,
+            "byte": self.integers,
+            "tinyint": self.integers,
             "long": self.longs,
+            "bigint": self.longs,
             "string": self.strings,
             "float": self.floats,
             "double": self.doubles,
@@ -524,7 +533,13 @@ class NZFakerField:
             "timestamp_ntz": self.timestamp_ntz_s,
         }
         for field in fields:
-            maps[field.type].append(field.name)
+            target = maps.get(field.type)
+            if target is None and field.type.startswith("decimal("):
+                target = self.doubles
+            if target is not None:
+                target.append(field.name)
+            else:
+                raise ValueError(f"Unknown field type: {field.type}")
 
     def get_schema(self) -> list[Field]:
         return self.fields

@@ -63,30 +63,69 @@ class EdgeDataSpec(BaseModel):
     edgeDataSourceId: str
     edgeDataSpecId: str
 
-    type: EdgeDataSpecType
+    type: EdgeDataSpecType | None = None
     format: Annotated[str, BeforeValidator(_validate_format)]
-    size: int
+    size: int | None = None
     index: int
-    is_null: bool
-    bits: list[str | None] | None = None
+    is_null: bool = False
+    bits: list[str | None] = []
+
+
+class DataSourceType(str, enum.Enum):
+    OPC_UA = "OPC_UA"
+    ModbusEdgeDataSource = "ModbusEdgeDataSource"
+    SocketEdgeDataSource = "SocketEdgeDataSource"
+    RevpiEdgeDataSource = "RevpiEdgeDataSource"
+    FastSocketEdgeDataSource = "FastSocketEdgeDataSource"
+    MelsecEdgeDataSource = "MelsecEdgeDataSource"
+    FanucEdgeDataSource = "FanucEdgeDataSource"
+
+
+class DataSourceEndianType(str, enum.Enum):
+    BIG = "BIG"
+    LITTLE = "LITTLE"
+
+
+class DataSourcePlcType(str, enum.Enum):
+    Q = "Q"
+    L = "L"
+    QnA = "QnA"
+    iQ_L = "iQ_L"
+    iQ_R = "iQ_R"
+    Type4E = "Type4E"
 
 
 class EdgeDataSource(BaseModel):
     edgeId: str | None = None
     edgeDataSourceId: str
-    name: str
-    type: str
-    orderIndex: int | None = None
-    period: int
-    charEncoding: str | None = None
+    type: DataSourceType
+    payload: Annotated[dict, BeforeValidator(_validate_obj)] | None = None
+
+    array2dHeader: Annotated[dict, BeforeValidator(_validate_obj)] | None = None
+    binderChannel: str | None = None
+    controlAttributes: Annotated[dict, BeforeValidator(_validate_obj)] | None = None
+    controlListener: Annotated[dict, BeforeValidator(_validate_obj)] | None = None
+    controlSets: Annotated[dict, BeforeValidator(_validate_obj)] | None = None
     directPass: bool | None = None
-    payload: Annotated[dict, BeforeValidator(_validate_obj)]
-    server: Annotated[dict, BeforeValidator(_validate_obj)]
-    wordOrder: str
-    readBlock: Annotated[list, BeforeValidator(_validate_obj)] | None = None
-    usedByteIndexes: Annotated[list, BeforeValidator(_validate_obj)] | None = None
+    endian: DataSourceEndianType | None = None
+    isServer: bool | None = None
+    name: str | None = None
+    period: int | None = None
+    portNames: list | None = None
+    protocol: str | None = None
     unitNumber: int | None = None
     registerType: str | None = None
+    server: Annotated[dict, BeforeValidator(_validate_obj)] | None = None
+    usedByteIndexes: Annotated[list, BeforeValidator(_validate_obj)] | None = None
+    wordOrder: DataSourceEndianType | None = DataSourceEndianType.BIG
+    readBlock: Annotated[list, BeforeValidator(_validate_obj)] | None = None
+    orderIndex: int | None = None
+    charEncoding: str | None = None
+    serialPort: Annotated[dict, BeforeValidator(_validate_obj)] | None = None
+    plcType: DataSourcePlcType | None = None
+    path: int | None = None
+    opcuaUser: str | None = None
+    opcuaPassword: str | None = None
 
 
 def _split(formats, format, prefix=None):
@@ -381,24 +420,42 @@ def edge_row_decode(
 
 
 # * Field
+FIELD_TYPES = [
+    "string",
+    "long",
+    "integer",
+    "short",
+    "byte",
+    "float",
+    "double",
+    "boolean",
+    "binary",
+    "date",
+    "timestamp",
+    "timestamp_ntz",
+    # backward compatibility
+    "tinyint",
+    "smallint",
+    "int",
+    "bigint",
+]
+
+
+def _validate_field_type(val: str) -> str:
+    val = val.lower()
+    if val in FIELD_TYPES or (val.startswith("decimal(") and val.endswith(")")):
+        return val
+    raise ValueError(f"Field type must be one of {FIELD_TYPES} or decimal(u8, u8): not {val}")
+
+
 class Field(BaseModel):
     name: str
-    type: Literal[
-        "integer",
-        "long",
-        "string",
-        "float",
-        "double",
-        "boolean",
-        "binary",
-        "date",
-        "timestamp",
-        "timestamp_ntz",
-    ]
+    type: Annotated[str, BeforeValidator(_validate_field_type)]
     subtype: str | None = None
     nullable: bool = True
     comment: str | None = None
     alias: str | None = None
+    units: str | None = None
 
 
 def nz_predict_field(key: str, val: any) -> Field:
@@ -473,7 +530,7 @@ def nz_pipeline_create(
     pipeline_name: str,
     schema_file_type,
     schema_file,
-    ingest_type: str = Literal["KAFKA", "EDGE"],
+    ingest_type: str = Literal["KAFKA", "MQTT", "EDGE"],
     enable_deltasync: bool = False,
     delete_retention: str = "",
     logger: logging.Logger = logging,

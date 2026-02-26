@@ -22,7 +22,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nz-pipeline-type",
         help="Pipeline type",
-        choices=["EDGE", "KAFKA"],
+        choices=["EDGE", "KAFKA", "MQTT"],
         default="KAFKA",
     )
     parser.add_argument("--nz-schema-file", help="Nazare Schema file")
