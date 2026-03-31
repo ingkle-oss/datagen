@@ -14,7 +14,9 @@ from zoneinfo import ZoneInfo
 
 from confluent_kafka import KafkaException, Producer
 
-from utils.nazare import edge_load_datasources, nz_load_fields, nz_pipeline_create
+from utils.k8s_config import add_k8s_pipeline_args, build_pipeline_config
+from utils.k8s_deploy import create_unified_pipeline
+from utils.nazare import edge_load_datasources, nz_load_fields
 from utils.nzfake import NaFaker, NZFakerEdge, NZFakerField
 from utils.utils import download_s3file, encode
 
@@ -186,7 +188,7 @@ if __name__ == "__main__":
     # Nazare Specific Options
     parser.add_argument(
         "--nz-create-pipeline",
-        help="Create Nazare pipeline",
+        help="Create K8s ingest pipeline before producing",
         action=argparse.BooleanOptionalAction,
         default=False,
     )
@@ -197,22 +199,8 @@ if __name__ == "__main__":
         choices=["csv", "json", "jsonl", "bson"],
         default="json",
     )
-    parser.add_argument(
-        "--nz-api-url",
-        help="Nazare Store API URL",
-        default="http://nzstore.nzstore.svc.cluster.local:8000/api/v1/pipelines",
-    )
-    parser.add_argument("--nz-api-username", help="Nazare Store API username")
-    parser.add_argument("--nz-api-password", help="Nazare Store API password")
-    parser.add_argument(
-        "--nz-pipeline-retention", help="Retention (e.g. 60,d)", default=""
-    )
-    parser.add_argument(
-        "--nz-pipeline-deltasync-enabled",
-        help="Enable deltasync",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
+
+    add_k8s_pipeline_args(parser)
 
     # Faker
     parser.add_argument(
@@ -248,25 +236,9 @@ if __name__ == "__main__":
             )
 
     if args.nz_create_pipeline:
-        if not schema_file:
-            raise RuntimeError(
-                "Please provide both --nz-schema-file and --nz-schema-file-type to create pipeline that requires schema file"
-            )
-
-        if not args.nz_api_url or not args.nz_api_username or not args.nz_api_password:
-            raise RuntimeError("Nazare API credentials are required")
-
-        nz_pipeline_create(
-            args.nz_api_url,
-            args.nz_api_username,
-            args.nz_api_password,
-            args.kafka_topic,
-            args.nz_schema_file_type,
-            schema_file,
-            "EDGE" if args.output_type == "edge" else "KAFKA",
-            args.nz_pipeline_deltasync_enabled,
-            args.nz_pipeline_retention,
-        )
+        ingest_type = "EDGE" if args.output_type == "edge" else "KAFKA"
+        config = build_pipeline_config(args, args.kafka_topic, ingest_type)
+        create_unified_pipeline(config)
 
     faker: NaFaker = None
     if args.output_type == "edge":

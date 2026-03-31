@@ -15,7 +15,9 @@ from zoneinfo import ZoneInfo
 import requests
 import urllib3
 
-from utils.nazare import edge_load_datasources, nz_load_fields, nz_pipeline_create
+from utils.nazare import edge_load_datasources, nz_load_fields
+from utils.k8s_config import add_k8s_pipeline_args, build_pipeline_config
+from utils.k8s_deploy import create_unified_pipeline
 from utils.nzfake import NaFaker, NZFakerEdge, NZFakerField
 from utils.utils import download_s3file, encode
 
@@ -132,33 +134,18 @@ if __name__ == "__main__":
     # Nazare Specific Options
     parser.add_argument(
         "--nz-create-pipeline",
-        help="Create Nazare pipeline",
+        help="Create K8s ingest pipeline before producing",
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument("--nz-schema-file", help="Nazare Schema file")
+    parser.add_argument("--nz-schema-file", help="Nazare Schema file (required for edge output type)")
     parser.add_argument(
         "--nz-schema-file-type",
         help="Nazare Schema file type",
         choices=["csv", "json", "jsonl", "bson"],
         default="json",
     )
-    parser.add_argument(
-        "--nz-api-url",
-        help="Nazare Store API URL",
-        default="http://nzstore.nzstore.svc.cluster.local:8000/api/v1/pipelines",
-    )
-    parser.add_argument("--nz-api-username", help="Nazare Store API username")
-    parser.add_argument("--nz-api-password", help="Nazare Store API password")
-    parser.add_argument(
-        "--nz-pipeline-retention", help="Retention (e.g. 60,d)", default=""
-    )
-    parser.add_argument(
-        "--nz-pipeline-deltasync-enabled",
-        help="Enable deltasync",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
+    add_k8s_pipeline_args(parser)
 
     # Faker
     parser.add_argument(
@@ -185,40 +172,24 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
+    if args.nz_create_pipeline:
+        ingest_type = "EDGE" if args.output_type == "edge" else "KAFKA"
+        config = build_pipeline_config(args, args.kafka_topic, ingest_type)
+        create_unified_pipeline(config)
+
     schema_file = None
-    if args.nz_schema_file and args.nz_schema_file_type:
+    if args.nz_schema_file:
         schema_file = args.nz_schema_file
         if schema_file.startswith("s3a://"):
             schema_file = download_s3file(
                 schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
             )
 
-    if args.nz_create_pipeline:
-        if not schema_file:
-            raise RuntimeError(
-                "Please provide both --nz-schema-file and --nz-schema-file-type to create pipeline that requires schema file"
-            )
-
-        if not args.nz_api_url or not args.nz_api_username or not args.nz_api_password:
-            raise RuntimeError("Nazare API credentials are required")
-
-        nz_pipeline_create(
-            args.nz_api_url,
-            args.nz_api_username,
-            args.nz_api_password,
-            args.kafka_topic,
-            args.nz_schema_file_type,
-            schema_file,
-            "EDGE" if args.output_type == "edge" else "KAFKA",
-            args.nz_pipeline_deltasync_enabled,
-            args.nz_pipeline_retention,
-        )
-
     faker: NaFaker = None
     if args.output_type == "edge":
         if not schema_file:
             raise RuntimeError(
-                "Please provide both --nz-schema-file and --nz-schema-file-type to edge output type that requires schema file"
+                "Please provide --nz-schema-file for edge output type"
             )
         faker: NZFakerEdge = NZFakerEdge(
             edge_load_datasources(schema_file, args.nz_schema_file_type),

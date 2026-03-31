@@ -564,6 +564,11 @@ def nz_pipeline_create(
     }
 
     if ingest_type == "EDGE":
+        data["table_create"]["fields_create"] = [
+            {"name": "timestamp", "type": "timestamp", "subtype": "microsecond", "nullable": True},
+            {"name": "date", "type": "date", "nullable": True},
+        ]
+
         data["edge_create"] = {
             "edgeId": pipeline_name,
             "type": "EXTERNAL",
