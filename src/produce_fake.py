@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from confluent_kafka import KafkaException, Producer
 
-from utils.fake_config import add_fake_args, create_faker
+from utils.fake_config import add_fake_args, create_faker, export_schema_file, NZFakerConfig
 from utils.k8s_config import add_k8s_pipeline_args, build_pipeline_config
 from utils.k8s_deploy import create_unified_pipeline
 from utils.utils import download_s3file, encode
@@ -210,17 +210,12 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
+    faker = create_faker(args)
+
     if args.nz_create_pipeline:
-        schema_file = args.nz_schema_file
-        if schema_file and schema_file.startswith("s3a://"):
-            schema_file = download_s3file(
-                schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
-            )
         ingest_type = "EDGE" if args.output_type == "edge" else "KAFKA"
         config = build_pipeline_config(args, args.kafka_topic, ingest_type)
         create_unified_pipeline(config)
-
-    faker = create_faker(args)
 
     custom_row = {}
     for kv in args.custom_row:

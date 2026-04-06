@@ -155,12 +155,12 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)-8s %(name)-12s: %(message)s",
     )
 
+    faker = create_faker(args)
+
     if args.nz_create_pipeline:
         ingest_type = "EDGE" if args.output_type == "edge" else "KAFKA"
         config = build_pipeline_config(args, args.kafka_topic, ingest_type)
         create_unified_pipeline(config)
-
-    faker = create_faker(args)
 
     custom_row = {}
     for kv in args.custom_row:

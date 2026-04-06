@@ -330,6 +330,30 @@ class NZFakerConfig(NaFaker):
 # ---------------------------------------------------------------------------
 
 
+def export_schema_file(faker: "NZFakerConfig", filepath: str = None) -> str:
+    """
+    Export NZFakerConfig schema to a JSON file compatible with nz_load_fields().
+    Returns the file path. If filepath is None, creates a temp file.
+    """
+    import tempfile
+
+    import orjson
+
+    fields = faker.get_schema()
+    data = [f.model_dump(exclude_none=True) for f in fields]
+
+    if filepath is None:
+        fd, filepath = tempfile.mkstemp(suffix=".json", prefix="fake_schema_")
+        with open(fd, "wb") as f:
+            f.write(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+    else:
+        with open(filepath, "wb") as f:
+            f.write(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+
+    logging.info("Exported schema to %s (%d fields)", filepath, len(fields))
+    return filepath
+
+
 def add_fake_args(parser: argparse.ArgumentParser) -> None:
     """Add all faker-related CLI arguments (legacy + new --fake-config)."""
     parser.add_argument(
