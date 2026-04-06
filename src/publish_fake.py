@@ -6,14 +6,11 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from ssl import create_default_context
-from zoneinfo import ZoneInfo
-
 import paho.mqtt.client as mqtt
 
-from utils.nazare import nz_load_fields, edge_load_datasources
+from utils.fake_config import add_fake_args, create_faker
 from utils.k8s_config import add_k8s_pipeline_args, build_pipeline_config
 from utils.k8s_deploy import create_unified_pipeline
-from utils.nzfake import NaFaker, NZFakerEdge, NZFakerField
 from utils.utils import download_s3file, encode
 
 
@@ -161,21 +158,7 @@ if __name__ == "__main__":
     add_k8s_pipeline_args(parser)
 
     # Faker
-    parser.add_argument(
-        "--fake-string-length", help="Length of string field", type=int, default=10
-    )
-    parser.add_argument(
-        "--fake-string-cardinality",
-        help="Number of string field cardinality",
-        type=int,
-        default=0,
-    )
-    parser.add_argument(
-        "--fake-binary-length", help="Length of binary field", type=int, default=10
-    )
-    parser.add_argument(
-        "--fake-timestamp-tzinfo", help="Datetime timezone", default="UTC"
-    )
+    add_fake_args(parser)
 
     parser.add_argument("--loglevel", help="log level", default="INFO")
     args = parser.parse_args()
@@ -190,31 +173,7 @@ if __name__ == "__main__":
         config = build_pipeline_config(args, args.mqtt_topic, ingest_type)
         create_unified_pipeline(config)
 
-    schema_file = None
-    if args.nz_schema_file:
-        schema_file = args.nz_schema_file
-        if schema_file.startswith("s3a://"):
-            schema_file = download_s3file(
-                schema_file, args.s3_accesskey, args.s3_secretkey, args.s3_endpoint
-            )
-
-    faker: NaFaker = None
-    if args.output_type == "edge":
-        if not schema_file:
-            raise RuntimeError(
-                "Please provide --nz-schema-file for edge output type"
-            )
-        faker: NZFakerEdge = NZFakerEdge(
-            edge_load_datasources(schema_file, args.nz_schema_file_type),
-        )
-    else:
-        faker: NaFaker = NZFakerField(
-            nz_load_fields(schema_file, args.nz_schema_file_type),
-            args.fake_string_length,
-            args.fake_string_cardinality,
-            args.fake_binary_length,
-            ZoneInfo(args.fake_timestamp_tzinfo),
-        )
+    faker = create_faker(args)
 
     custom_row = {}
     for kv in args.custom_row:

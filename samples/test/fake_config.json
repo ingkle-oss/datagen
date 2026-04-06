@@ -1,0 +1,20 @@
+{
+  "defaults": {
+    "null_ratio": 0.02,
+    "float": { "precision": 2 },
+    "double": { "precision": 2 },
+    "timestamp": { "tzinfo": "Asia/Seoul" }
+  },
+  "columns": [
+    { "name": "timestamp", "type": "timestamp", "null_ratio": 0.0 },
+    { "name": "date", "type": "date", "null_ratio": 0.0 },
+    { "name": "sensor_id", "type": "integer", "min": 1, "max": 500 },
+    { "name": "temperature", "type": "double", "min": -40.0, "max": 85.0 },
+    { "name": "humidity", "type": "float", "min": 0.0, "max": 100.0, "precision": 1 },
+    { "name": "status", "type": "string", "values": ["OK", "WARN", "ERROR", "CRITICAL"] },
+    { "name": "ip_address", "type": "string", "pattern": "ipv4_public", "null_ratio": 0.1 },
+    { "name": "location", "type": "string", "values": ["Seoul", "Busan", "Daegu", "Incheon"] },
+    { "name": "is_active", "type": "boolean" },
+    { "name": "battery", "type": "integer", "min": 0, "max": 100, "null_ratio": 0.05 }
+  ]
+}
