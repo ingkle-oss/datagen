@@ -1,0 +1,13 @@
+{
+  "total_columns": 20,
+  "type_ratio": {
+    "integer": 40,
+    "double": 30,
+    "string": 20,
+    "boolean": 10
+  },
+  "defaults": {
+    "integer": { "min": 0, "max": 9999 },
+    "double": { "min": -100.0, "max": 100.0, "precision": 3 }
+  }
+}
