@@ -1,7 +1,5 @@
 from dataclasses import dataclass
 
-from kubernetes import client
-
 
 @dataclass
 class PipelineConfig:
@@ -77,5 +75,7 @@ def get_image(config: PipelineConfig, image_name: str, app_version: str) -> str:
     return f"{config.image_registry}{config.image_project}/{image_name}:{app_version}"
 
 
-def shared_env_from(config: PipelineConfig) -> list[client.V1EnvFromSource]:
+def shared_env_from(config: PipelineConfig):
+    from kubernetes import client
+
     return [client.V1EnvFromSource(secret_ref=client.V1SecretEnvSource(name=f"{config.prefix}-secret"))]

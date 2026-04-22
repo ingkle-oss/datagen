@@ -35,3 +35,27 @@ def replace_deployment(name: str, namespace: str, deployment):
     logging.info("Replacing deployment %s in namespace %s...", name, namespace)
     api.replace_namespaced_deployment(name=name, namespace=namespace, body=deployment)
     logging.info("Deployment %s replaced in namespace %s.", name, namespace)
+
+
+def restart_deployment(name: str, namespace: str):
+    api = get_apps_v1_api()
+    body = {
+        "spec": {
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/restartedAt": datetime.datetime.utcnow().isoformat() + "Z"
+                    }
+                }
+            }
+        }
+    }
+    logging.info("Restarting deployment %s in namespace %s...", name, namespace)
+    api.patch_namespaced_deployment(name=name, namespace=namespace, body=body)
+    logging.info("Deployment %s restarted in namespace %s.", name, namespace)
+
+
+def list_deployments(namespace: str, label_selector: str | None = None):
+    api = get_apps_v1_api()
+    logging.info("Listing deployments in namespace %s...", namespace)
+    return api.list_namespaced_deployment(namespace=namespace, label_selector=label_selector)

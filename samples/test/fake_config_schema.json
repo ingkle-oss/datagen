@@ -1,0 +1,52 @@
+[
+  {
+    "name": "timestamp",
+    "type": "timestamp",
+    "nullable": false
+  },
+  {
+    "name": "date",
+    "type": "date",
+    "nullable": false
+  },
+  {
+    "name": "sensor_id",
+    "type": "integer",
+    "nullable": false
+  },
+  {
+    "name": "temperature",
+    "type": "double",
+    "nullable": false
+  },
+  {
+    "name": "humidity",
+    "type": "float",
+    "nullable": false
+  },
+  {
+    "name": "status",
+    "type": "string",
+    "nullable": false
+  },
+  {
+    "name": "ip_address",
+    "type": "string",
+    "nullable": true
+  },
+  {
+    "name": "location",
+    "type": "string",
+    "nullable": false
+  },
+  {
+    "name": "is_active",
+    "type": "boolean",
+    "nullable": false
+  },
+  {
+    "name": "battery",
+    "type": "integer",
+    "nullable": true
+  }
+]

@@ -16,6 +16,12 @@ def get_core_v1_api():
 
 
 @cache
+def get_api_client():
+    config.load_config()
+    return client.ApiClient()
+
+
+@cache
 def get_custom_objects_api():
     config.load_config()
     api = client.CustomObjectsApi()

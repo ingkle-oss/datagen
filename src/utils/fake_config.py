@@ -1,4 +1,5 @@
 import argparse
+import math
 import logging
 import random
 import string
@@ -43,6 +44,64 @@ _FLOAT_TYPES = frozenset(["float", "double"])
 # ---------------------------------------------------------------------------
 
 
+class ColumnGenerator(BaseModel):
+    """Time-aware generator configuration for a column."""
+
+    kind: str
+    value: object | None = None
+    values: list[object] | None = None
+    amplitude: float | None = None
+    period_sec: float | None = None
+    offset: float | None = None
+    phase_sec: float | None = None
+    noise: float | None = None
+    start: float | int | None = None
+    slope_per_sec: float | None = None
+    wrap: bool = False
+    dwell_sec: float | None = None
+    interval_sec: float | None = None
+    step_stddev: float | None = None
+    min: int | float | None = None
+    max: int | float | None = None
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        kind = value.lower()
+        supported = {
+            "constant",
+            "sine",
+            "ramp",
+            "step",
+            "random_walk",
+            "choice_cycle",
+        }
+        if kind not in supported:
+            raise ValueError(f"Unsupported generator kind: {value}")
+        return kind
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "ColumnGenerator":
+        if self.kind == "constant" and self.value is None:
+            raise ValueError("constant generator requires value")
+        if self.kind == "sine":
+            if self.amplitude is None or self.period_sec in (None, 0):
+                raise ValueError("sine generator requires amplitude and period_sec")
+        if self.kind == "ramp":
+            if self.start is None or self.slope_per_sec is None:
+                raise ValueError("ramp generator requires start and slope_per_sec")
+        if self.kind == "step":
+            if not self.values or self.dwell_sec in (None, 0):
+                raise ValueError("step generator requires values and dwell_sec")
+        if self.kind == "random_walk":
+            if self.start is None or self.step_stddev is None:
+                raise ValueError("random_walk generator requires start and step_stddev")
+        if self.kind == "choice_cycle":
+            if not self.values or self.interval_sec in (None, 0):
+                raise ValueError("choice_cycle generator requires values and interval_sec")
+        return self
+
+
 class ColumnDef(BaseModel):
     """Per-column fake data generation configuration."""
 
@@ -57,6 +116,7 @@ class ColumnDef(BaseModel):
     cardinality: int | None = None
     pattern: str | None = None
     tzinfo: str | None = None
+    generator: ColumnGenerator | None = None
 
     @field_validator("type")
     @classmethod
@@ -108,6 +168,11 @@ def load_fake_config(filepath: str) -> FakeConfig:
 
     with open(filepath, "rb") as f:
         obj = orjson.loads(f.read())
+    return load_fake_config_obj(obj)
+
+
+def load_fake_config_obj(obj: dict) -> FakeConfig:
+    """Load and validate a FakeConfig from a Python object."""
     return FakeConfig.model_validate(obj)
 
 
@@ -144,7 +209,8 @@ def _resolve_column(col: ColumnDef, defaults: dict) -> ColumnDef:
     valid_fields = set(ColumnDef.model_fields.keys()) - {"name", "type"}
     filtered = {k: v for k, v in merged.items() if k in valid_fields}
 
-    return col.model_copy(update=filtered)
+    payload = {"name": col.name, "type": col.type, **filtered}
+    return ColumnDef.model_validate(payload)
 
 
 def _expand_type_ratio(
@@ -236,6 +302,7 @@ class NZFakerConfig(NaFaker):
     def __init__(self, columns: list[ColumnDef]):
         self.fake = Faker(use_weighting=False)
         self.columns = columns
+        self._generator_state: dict[str, float | int | object] = {}
 
         # Pre-compute string cardinality pools per column
         self._string_pools: dict[str, list[str]] = {}
@@ -260,9 +327,100 @@ class NZFakerConfig(NaFaker):
             for col in self.columns
         ]
 
-    def _generate_one(self, col: ColumnDef):
+    def _coerce_value(self, col: ColumnDef, value):
+        if value is None:
+            return None
+
+        if col.type in _INT_TYPES:
+            return int(round(float(value)))
+
+        if col.type in _FLOAT_TYPES or col.type.startswith("decimal("):
+            value = float(value)
+            if col.precision is not None:
+                return round(value, col.precision)
+            return value
+
+        if col.type == "string":
+            return str(value)
+
+        if col.type == "boolean":
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                lowered = value.strip().lower()
+                if lowered in {"true", "1", "yes", "y", "on"}:
+                    return True
+                if lowered in {"false", "0", "no", "n", "off"}:
+                    return False
+            return bool(value)
+
+        return value
+
+    def _generate_from_generator(
+        self,
+        col: ColumnDef,
+        elapsed_seconds: float,
+    ):
+        generator = col.generator
+        if generator is None:
+            return None
+
+        if generator.kind == "constant":
+            return self._coerce_value(col, generator.value)
+
+        if generator.kind == "sine":
+            offset = generator.offset or 0.0
+            phase = generator.phase_sec or 0.0
+            noise = generator.noise or 0.0
+            value = offset + generator.amplitude * math.sin(
+                (2 * math.pi * (elapsed_seconds + phase)) / generator.period_sec
+            )
+            if noise > 0:
+                value += random.gauss(0, noise)
+            return self._coerce_value(col, value)
+
+        if generator.kind == "ramp":
+            value = generator.start + (generator.slope_per_sec * elapsed_seconds)
+            if generator.wrap and generator.min is not None and generator.max is not None:
+                span = generator.max - generator.min
+                if span > 0:
+                    value = generator.min + ((value - generator.min) % span)
+            if generator.min is not None:
+                value = max(generator.min, value)
+            if generator.max is not None:
+                value = min(generator.max, value)
+            return self._coerce_value(col, value)
+
+        if generator.kind == "step":
+            index = int(elapsed_seconds // generator.dwell_sec) % len(generator.values)
+            return self._coerce_value(col, generator.values[index])
+
+        if generator.kind == "choice_cycle":
+            index = int(elapsed_seconds // generator.interval_sec) % len(generator.values)
+            return self._coerce_value(col, generator.values[index])
+
+        if generator.kind == "random_walk":
+            current = self._generator_state.get(col.name, generator.start)
+            current = float(current) + random.gauss(0, generator.step_stddev)
+            if generator.min is not None:
+                current = max(generator.min, current)
+            if generator.max is not None:
+                current = min(generator.max, current)
+            self._generator_state[col.name] = current
+            return self._coerce_value(col, current)
+
+        raise ValueError(f"Unsupported generator kind: {generator.kind}")
+
+    def _generate_one(
+        self,
+        col: ColumnDef,
+        elapsed_seconds: float = 0.0,
+    ):
         if col.null_ratio > 0 and random.random() < col.null_ratio:
             return None
+
+        if col.generator:
+            return self._generate_from_generator(col, elapsed_seconds)
 
         if col.values:
             return random.choice(col.values)
@@ -321,8 +479,11 @@ class NZFakerConfig(NaFaker):
 
         raise ValueError(f"Unsupported column type: {t}")
 
-    def values(self) -> dict[str, any]:
-        return {col.name: self._generate_one(col) for col in self.columns}
+    def values(self, elapsed_seconds: float = 0.0) -> dict[str, any]:
+        return {
+            col.name: self._generate_one(col, elapsed_seconds=elapsed_seconds)
+            for col in self.columns
+        }
 
 
 # ---------------------------------------------------------------------------

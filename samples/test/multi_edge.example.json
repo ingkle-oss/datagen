@@ -1,0 +1,50 @@
+{
+  "defaults": {
+    "mode": "pattern",
+    "rate": 2,
+    "interval": 1.0,
+    "output_type": "json",
+    "timestamp_enabled": true,
+    "date_enabled": true,
+    "auto_inject_edge_id": true,
+    "fake_config": {
+      "columns": [
+        {
+          "name": "temperature",
+          "type": "float",
+          "generator": {
+            "kind": "sine",
+            "amplitude": 10,
+            "period_sec": 60,
+            "offset": 50
+          }
+        },
+        {
+          "name": "phase",
+          "type": "string",
+          "generator": {
+            "kind": "step",
+            "values": ["idle", "warmup", "run"],
+            "dwell_sec": 15
+          }
+        }
+      ]
+    }
+  },
+  "edges": [
+    {
+      "count": 2,
+      "name_pattern": "{prefix}-{i:03d}",
+      "start_index": 1
+    },
+    {
+      "name": "edge-mct-01",
+      "mode": "file",
+      "playback_speed": 5.0,
+      "source": {
+        "filepath": "samples/test/fake.json",
+        "input_type": "json"
+      }
+    }
+  ]
+}

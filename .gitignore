@@ -172,3 +172,5 @@ cython_debug/
 # gitsecret
 !*.secret
 .gitsecret/keys/random_seed
+.claude/
+.omx/
