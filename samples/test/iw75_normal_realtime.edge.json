@@ -1,0 +1,78 @@
+{
+  "name": "test000",
+  "topic_name": "test000",
+  "mode": "pattern",
+  "rate": 1,
+  "interval": 1.0,
+  "report_interval": 5,
+  "output_type": "json",
+  "timestamp_enabled": true,
+  "date_enabled": true,
+  "custom_row": {
+    "edge_id": "test000",
+    "site": "200.60",
+    "scenario": "iw75-normal-realtime"
+  },
+  "fake_config": {
+    "columns": [
+      {
+        "name": "plc001@status",
+        "type": "integer",
+        "generator": {
+          "kind": "step",
+          "values": [1, 1, 1, 1, 0],
+          "dwell_sec": 3
+        }
+      },
+      {
+        "name": "plc001@temperature",
+        "type": "float",
+        "precision": 2,
+        "generator": {
+          "kind": "sine",
+          "amplitude": 4,
+          "period_sec": 60,
+          "offset": 55
+        }
+      },
+      {
+        "name": "plc001@vibration",
+        "type": "float",
+        "precision": 2,
+        "generator": {
+          "kind": "sine",
+          "amplitude": 0.5,
+          "period_sec": 45,
+          "offset": 2.0
+        }
+      },
+      {
+        "name": "phase",
+        "type": "string",
+        "generator": {
+          "kind": "step",
+          "values": ["run", "run", "run", "run", "idle"],
+          "dwell_sec": 3
+        }
+      }
+    ]
+  },
+  "kafka": {
+    "bootstrap_servers": "redpanda.redpanda.svc.cluster.local:9093",
+    "security_protocol": "SASL_PLAINTEXT",
+    "sasl_mechanism": "SCRAM-SHA-512",
+    "sasl_username": "nazare",
+    "sasl_password": "<set at deploy time>",
+    "ssl_ca_location": null,
+    "compression_type": "gzip",
+    "delivery_timeout_ms": 30000,
+    "linger_ms": 100,
+    "batch_size": 1000000,
+    "batch_num_messages": 10000,
+    "message_max_bytes": 1000000,
+    "acks": 0,
+    "flush": true,
+    "partition": 0,
+    "key": null
+  }
+}
