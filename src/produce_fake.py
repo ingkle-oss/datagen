@@ -87,6 +87,18 @@ def _delivery_reporter(report_interval: int):
     return _callback
 
 
+def _normalize_partition(value: int | str | None) -> int | None:
+    if value is None or value == "":
+        return None
+
+    partition = int(value)
+    if partition == -1:
+        return None
+    if partition < -1:
+        raise ValueError("Kafka partition must be -1 for auto partitioning or >= 0")
+    return partition
+
+
 def _inject_time_fields(row: dict, *, started_at: datetime, elapsed_seconds: float, timestamp_enabled: bool, date_enabled: bool):
     ts = started_at + timedelta(seconds=elapsed_seconds)
     new_row = dict(row)
@@ -103,7 +115,7 @@ def _produce_rows(
     *,
     producer: Producer,
     topic: str,
-    partition: int,
+    partition: int | None,
     key: str | None,
     flush: bool,
     report_interval: int,
@@ -120,13 +132,15 @@ def _produce_rows(
         for row in rows:
             producer.poll(0)
             try:
-                producer.produce(
-                    topic=topic,
-                    value=encode(row, output_type),
-                    key=key.encode("utf-8") if key else None,
-                    partition=partition,
-                    on_delivery=callback,
-                )
+                message = {
+                    "topic": topic,
+                    "value": encode(row, output_type),
+                    "key": key.encode("utf-8") if key else None,
+                    "on_delivery": callback,
+                }
+                if partition is not None:
+                    message["partition"] = partition
+                producer.produce(**message)
             except KafkaException as exc:
                 logging.error("Kafka producing error: %s", exc)
         if flush:
@@ -164,7 +178,7 @@ def _run_pattern_runtime(runtime_config: dict):
     _produce_rows(
         producer=producer,
         topic=runtime_config["topic_name"],
-        partition=int(runtime_config["kafka"].get("partition", 0)),
+        partition=_normalize_partition(runtime_config["kafka"].get("partition")),
         key=runtime_config["kafka"].get("key"),
         flush=bool(runtime_config["kafka"].get("flush", True)),
         report_interval=int(runtime_config.get("report_interval", 10)),
@@ -225,7 +239,7 @@ def _run_file_runtime(runtime_config: dict):
         _produce_rows(
             producer=producer,
             topic=runtime_config["topic_name"],
-            partition=int(runtime_config["kafka"].get("partition", 0)),
+            partition=_normalize_partition(runtime_config["kafka"].get("partition")),
             key=runtime_config["kafka"].get("key"),
             flush=bool(runtime_config["kafka"].get("flush", True)),
             report_interval=int(runtime_config.get("report_interval", 10)),
@@ -312,7 +326,7 @@ def _run_standard_fake(args):
     _produce_rows(
         producer=producer,
         topic=args.kafka_topic,
-        partition=args.kafka_partition,
+        partition=_normalize_partition(args.kafka_partition),
         key=args.kafka_key,
         flush=args.kafka_flush,
         report_interval=args.report_interval,
@@ -411,7 +425,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--kafka-acks", choices=[1, 0, -1], type=int, default=0)
     parser.add_argument("--kafka-flush", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--kafka-topic")
-    parser.add_argument("--kafka-partition", type=int, default=0)
+    parser.add_argument(
+        "--kafka-partition",
+        type=int,
+        default=None,
+        help="Kafka partition. Omit or set -1 to let Kafka auto-partition.",
+    )
     parser.add_argument("--kafka-key")
 
     parser.add_argument("--s3-endpoint", default="http://rook-ceph-rgw-ceph-objectstore.rook-ceph.svc.cluster.local:80")

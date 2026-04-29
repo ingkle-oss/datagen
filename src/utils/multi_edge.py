@@ -186,7 +186,7 @@ def build_runtime_config(spec: ResolvedEdgeSpec, args) -> dict[str, Any]:
         "message_max_bytes": args.kafka_message_max_bytes,
         "acks": args.kafka_acks,
         "flush": args.kafka_flush,
-        "partition": args.kafka_partition,
+        "partition": getattr(args, "kafka_partition", None),
         "key": args.kafka_key,
     }
     source = spec.source.model_dump() if spec.source else None

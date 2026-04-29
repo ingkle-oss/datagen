@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from utils.multi_edge import build_runtime_config, load_multi_edge_specs
 
 
-def _args():
+def _args(kafka_partition=None):
     return SimpleNamespace(
         kafka_bootstrap_servers="broker:9093",
         kafka_security_protocol="SASL_PLAINTEXT",
@@ -26,7 +26,7 @@ def _args():
         kafka_message_max_bytes=1000000,
         kafka_acks=0,
         kafka_flush=True,
-        kafka_partition=0,
+        kafka_partition=kafka_partition,
         kafka_key=None,
         s3_endpoint="http://s3.local",
         s3_accesskey="ak",
@@ -77,4 +77,37 @@ def test_multi_edge_spec_expands_count_and_builds_runtime_config(tmp_path):
     runtime = build_runtime_config(specs[0], _args())
     assert runtime["topic_name"] == "edge-001"
     assert runtime["kafka"]["sasl_username"] == "user"
+    assert runtime["kafka"]["partition"] is None
     assert runtime["fake_config"]["columns"][-1]["generator"]["value"] == "edge-001"
+
+
+def test_multi_edge_runtime_config_preserves_explicit_fixed_partition(tmp_path):
+    spec_path = tmp_path / "edges.json"
+    spec_path.write_text(
+        json.dumps(
+            {
+                "defaults": {
+                    "mode": "pattern",
+                    "fake_config": {
+                        "columns": [
+                            {
+                                "name": "temperature",
+                                "type": "float",
+                                "generator": {
+                                    "kind": "constant",
+                                    "value": 42,
+                                },
+                            }
+                        ]
+                    },
+                },
+                "edges": [{"name": "edge-001"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_multi_edge_specs(str(spec_path), "edge")[0]
+    runtime = build_runtime_config(spec, _args(kafka_partition=0))
+
+    assert runtime["kafka"]["partition"] == 0

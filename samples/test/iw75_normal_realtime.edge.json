@@ -72,7 +72,7 @@
     "message_max_bytes": 1000000,
     "acks": 0,
     "flush": true,
-    "partition": 0,
+    "partition": null,
     "key": null
   }
 }
